@@ -46,10 +46,7 @@ private slots:
     void onScriptItemChanged(QListWidgetItem *item);
 
     // MQTT client slots
-    void onMqttConnected();
-    void onMqttDisconnected();
-    void onMqttMessageReceived(const QString &topic, const QString &payload);
-    void onMqttError(const QString &msg);
+
 
     // Chat widget slots
     void onSendRequested(const QString &topic, const QString &payload);

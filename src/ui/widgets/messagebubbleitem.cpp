@@ -8,7 +8,7 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
     , m_msg(msg)
     , m_outgoing(msg.outgoing)
 {
-    m_bgColor = m_outgoing ? QColor("#ea5413") : QColor("#4a4a5a");
+    m_bgColor = m_outgoing ? QColor("#ea5413") : QColor("#7f7f80");
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
 
     QVBoxLayout *outerLayout = new QVBoxLayout(this);

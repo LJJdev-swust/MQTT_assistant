@@ -56,6 +56,9 @@ void MqttClient::connectToHost(const MqttConnectionConfig &config)
                 }
                 sslConfig.setLocalCertificate(cert);
                 sslConfig.setPrivateKey(key);
+                if (key.isNull()) {
+                    emit errorOccurred("TLS: failed to load private key (tried RSA and EC)");
+                }
             }
         }
         m_client->setSslConfiguration(sslConfig);

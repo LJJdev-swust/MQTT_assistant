@@ -479,18 +479,6 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
 }
 
 // ──────────────────────────────────────────────
-//  MQTT Slots (legacy – connected directly above via lambdas)
-// ──────────────────────────────────────────────
-
-void MainWindow::onMqttConnected()    {}
-void MainWindow::onMqttDisconnected() {}
-void MainWindow::onMqttMessageReceived(const QString &, const QString &) {}
-void MainWindow::onMqttError(const QString &msg)
-{
-    QMessageBox::warning(this, "MQTT Error", msg);
-}
-
-// ──────────────────────────────────────────────
 //  Command Panel Slots
 // ──────────────────────────────────────────────
 
