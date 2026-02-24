@@ -7,7 +7,7 @@
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
-    app.setApplicationName("MQTT_assistant");
+    app.setApplicationName("MQTT Assistant");
     app.setOrganizationName("MQTTAssistant");
 
     // Ensure app data directory exists

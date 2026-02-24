@@ -46,7 +46,6 @@ MainWindow::~MainWindow()
             client->disconnectFromHost();
         client->deleteLater();
     }
-    m_db.close();
 }
 
 // ──────────────────────────────────────────────
