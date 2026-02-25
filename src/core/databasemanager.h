@@ -34,6 +34,11 @@ public:
     bool updateScript(const ScriptConfig &script);
     bool deleteScript(int id);
 
+    // Subscriptions
+    QList<SubscriptionConfig> loadSubscriptions(int connectionId);
+    int saveSubscription(const SubscriptionConfig &sub);
+    bool deleteSubscription(int id);
+
     // Messages
     int saveMessage(const MessageRecord &msg);
     QList<MessageRecord> loadMessages(int connectionId, int limit = 100);

@@ -9,7 +9,7 @@ ScriptDialog::ScriptDialog(QWidget *parent)
 {
     setupUi();
     populateFrom(ScriptConfig());
-    setWindowTitle("New Script");
+    setWindowTitle("新建脚本");
 }
 
 ScriptDialog::ScriptDialog(const ScriptConfig &config, QWidget *parent)
@@ -17,7 +17,7 @@ ScriptDialog::ScriptDialog(const ScriptConfig &config, QWidget *parent)
 {
     setupUi();
     populateFrom(config);
-    setWindowTitle("Edit Script");
+    setWindowTitle("编辑脚本");
 }
 
 void ScriptDialog::setupUi()
@@ -32,60 +32,62 @@ void ScriptDialog::setupUi()
     form->setSpacing(8);
 
     m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setPlaceholderText("Script name");
-    form->addRow("Name:", m_nameEdit);
+    m_nameEdit->setPlaceholderText("脚本名称");
+    form->addRow("名称:", m_nameEdit);
 
-    m_enabledCheck = new QCheckBox("Enabled", this);
+    m_enabledCheck = new QCheckBox("已启用", this);
     m_enabledCheck->setChecked(true);
-    form->addRow("Status:", m_enabledCheck);
+    form->addRow("状态:", m_enabledCheck);
 
     m_triggerTopicEdit = new QLineEdit(this);
-    m_triggerTopicEdit->setPlaceholderText("e.g. sensors/# (empty = any)");
-    form->addRow("Trigger Topic:", m_triggerTopicEdit);
+    m_triggerTopicEdit->setPlaceholderText("如: sensors/# (空=任意)");
+    form->addRow("触发主题:", m_triggerTopicEdit);
 
     m_conditionCombo = new QComboBox(this);
-    m_conditionCombo->addItem("Any",        "any");
-    m_conditionCombo->addItem("Contains",   "contains");
-    m_conditionCombo->addItem("Equals",     "equals");
-    m_conditionCombo->addItem("StartsWith", "startsWith");
-    m_conditionCombo->addItem("EndsWith",   "endsWith");
-    m_conditionCombo->addItem("RegEx",      "regex");
-    form->addRow("Condition:", m_conditionCombo);
+    m_conditionCombo->addItem("任意",        "any");
+    m_conditionCombo->addItem("包含",   "contains");
+    m_conditionCombo->addItem("等于",     "equals");
+    m_conditionCombo->addItem("开头匹配", "startsWith");
+    m_conditionCombo->addItem("结尾匹配",   "endsWith");
+    m_conditionCombo->addItem("正则表达式",      "regex");
+    form->addRow("触发条件:", m_conditionCombo);
 
     m_triggerValueEdit = new QLineEdit(this);
-    m_triggerValueEdit->setPlaceholderText("Match value...");
+    m_triggerValueEdit->setPlaceholderText("匹配值...");
     m_triggerValueEdit->setEnabled(false);
-    form->addRow("Match Value:", m_triggerValueEdit);
+    form->addRow("匹配值:", m_triggerValueEdit);
 
     m_responseTopicEdit = new QLineEdit(this);
-    m_responseTopicEdit->setPlaceholderText("e.g. actuators/result");
-    form->addRow("Response Topic:", m_responseTopicEdit);
+    m_responseTopicEdit->setPlaceholderText("如: actuators/result");
+    form->addRow("响应主题:", m_responseTopicEdit);
 
     m_responsePayloadEdit = new QTextEdit(this);
     m_responsePayloadEdit->setPlaceholderText(
-        "Response payload... Supports {{timestamp}} {{topic}} {{payload}}");
+        "响应内容... 支持 {{timestamp}} {{topic}} {{payload}}");
     m_responsePayloadEdit->setMaximumHeight(80);
-    form->addRow("Response Payload:", m_responsePayloadEdit);
+    form->addRow("响应内容:", m_responsePayloadEdit);
 
     m_responseQosCombo = new QComboBox(this);
-    m_responseQosCombo->addItem("0 - At most once");
-    m_responseQosCombo->addItem("1 - At least once");
-    m_responseQosCombo->addItem("2 - Exactly once");
-    form->addRow("Response QoS:", m_responseQosCombo);
+    m_responseQosCombo->addItem("0 - 最多一次");
+    m_responseQosCombo->addItem("1 - 至少一次");
+    m_responseQosCombo->addItem("2 - 恰好一次");
+    form->addRow("响应 QoS:", m_responseQosCombo);
 
-    m_responseRetainCheck = new QCheckBox("Retain response", this);
-    form->addRow("Retain:", m_responseRetainCheck);
+    m_responseRetainCheck = new QCheckBox("保留响应", this);
+    form->addRow("保留:", m_responseRetainCheck);
 
     m_delayMsSpin = new QSpinBox(this);
     m_delayMsSpin->setRange(0, 60000);
     m_delayMsSpin->setValue(0);
     m_delayMsSpin->setSuffix(" ms");
-    form->addRow("Delay:", m_delayMsSpin);
+    form->addRow("延迟:", m_delayMsSpin);
 
     mainLayout->addLayout(form);
 
     QDialogButtonBox *bbox = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    bbox->button(QDialogButtonBox::Ok)->setText("确定");
+    bbox->button(QDialogButtonBox::Cancel)->setText("取消");
     mainLayout->addWidget(bbox);
 
     connect(bbox,             &QDialogButtonBox::accepted, this, &QDialog::accept);

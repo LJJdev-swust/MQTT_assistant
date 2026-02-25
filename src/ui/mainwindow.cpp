@@ -17,6 +17,8 @@
 #include <QLabel>
 #include <QFrame>
 #include <QListWidgetItem>
+#include <QInputDialog>
+#include <QResizeEvent>
 
 // ──────────────────────────────────────────────
 //  Construction
@@ -25,13 +27,15 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_activeConnectionId(-1)
+    , m_toastLabel(nullptr)
+    , m_toastTimer(nullptr)
 {
-    setWindowTitle("MQTT Assistant");
-    setMinimumSize(900, 620);
-    resize(1100, 720);
+    setWindowTitle("MQTT 助手");
+    setMinimumSize(960, 640);
+    resize(1200, 780);
 
     if (!m_db.open())
-        QMessageBox::critical(this, "Database Error", "Failed to open the database.");
+        QMessageBox::critical(this, "数据库错误", "无法打开数据库，请检查存储权限。");
 
     setupMenuBar();
     setupUi();
@@ -40,7 +44,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    // Disconnect all active clients
     for (MqttClient *client : m_clients.values()) {
         if (client->isConnected())
             client->disconnectFromHost();
@@ -64,7 +67,7 @@ void MainWindow::setupUi()
     // Sidebar
     QWidget *sidebar = new QWidget(central);
     sidebar->setObjectName("sidebarWidget");
-    sidebar->setFixedWidth(220);
+    sidebar->setFixedWidth(240);
     setupSidebar(sidebar);
     hLayout->addWidget(sidebar);
 
@@ -74,8 +77,19 @@ void MainWindow::setupUi()
     hLayout->addWidget(content, 1);
 
     // Status bar
-    m_statusLabel = new QLabel("Not connected", this);
+    m_statusLabel = new QLabel("未连接", this);
     statusBar()->addWidget(m_statusLabel);
+
+    // Toast overlay
+    m_toastLabel = new QLabel(this);
+    m_toastLabel->setObjectName("toastLabel");
+    m_toastLabel->setAlignment(Qt::AlignCenter);
+    m_toastLabel->setWordWrap(true);
+    m_toastLabel->hide();
+
+    m_toastTimer = new QTimer(this);
+    m_toastTimer->setSingleShot(true);
+    connect(m_toastTimer, &QTimer::timeout, m_toastLabel, &QLabel::hide);
 }
 
 void MainWindow::setupSidebar(QWidget *sidebar)
@@ -85,7 +99,7 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     layout->setSpacing(6);
 
     // App title
-    QLabel *titleLabel = new QLabel("MQTT Assistant", sidebar);
+    QLabel *titleLabel = new QLabel("MQTT 助手", sidebar);
     titleLabel->setObjectName("labelAppTitle");
     titleLabel->setAlignment(Qt::AlignCenter);
     layout->addWidget(titleLabel);
@@ -93,17 +107,17 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     // Separator
     QFrame *sep = new QFrame(sidebar);
     sep->setFrameShape(QFrame::HLine);
-    sep->setStyleSheet("color: #333350;");
+    sep->setObjectName("sidebarSep");
     layout->addWidget(sep);
 
     // ---- Connections section ----
     QHBoxLayout *connHeader = new QHBoxLayout();
-    QLabel *connLabel = new QLabel("CONNECTIONS", sidebar);
+    QLabel *connLabel = new QLabel("连接管理", sidebar);
     connLabel->setObjectName("labelSectionConnections");
     QPushButton *addConnBtn = new QPushButton("+", sidebar);
     addConnBtn->setObjectName("btnAddConnection");
     addConnBtn->setFixedSize(24, 24);
-    addConnBtn->setToolTip("Add Connection");
+    addConnBtn->setToolTip("新建连接");
     connHeader->addWidget(connLabel);
     connHeader->addStretch();
     connHeader->addWidget(addConnBtn);
@@ -111,18 +125,37 @@ void MainWindow::setupSidebar(QWidget *sidebar)
 
     m_connectionPanel = new ConnectionPanel(sidebar);
     m_connectionPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_connectionPanel->setMinimumHeight(100);
-    m_connectionPanel->setMaximumHeight(180);
+    m_connectionPanel->setMinimumHeight(80);
+    m_connectionPanel->setMaximumHeight(160);
     layout->addWidget(m_connectionPanel);
+
+    // ---- Subscriptions section ----
+    QHBoxLayout *subHeader = new QHBoxLayout();
+    QLabel *subLabel = new QLabel("订阅管理", sidebar);
+    subLabel->setObjectName("labelSectionSubscriptions");
+    QPushButton *addSubBtn = new QPushButton("+", sidebar);
+    addSubBtn->setObjectName("btnAddSubscription");
+    addSubBtn->setFixedSize(24, 24);
+    addSubBtn->setToolTip("新增订阅");
+    subHeader->addWidget(subLabel);
+    subHeader->addStretch();
+    subHeader->addWidget(addSubBtn);
+    layout->addLayout(subHeader);
+
+    m_subscriptionPanel = new SubscriptionPanel(sidebar);
+    m_subscriptionPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_subscriptionPanel->setMinimumHeight(60);
+    m_subscriptionPanel->setMaximumHeight(140);
+    layout->addWidget(m_subscriptionPanel);
 
     // ---- Commands section ----
     QHBoxLayout *cmdHeader = new QHBoxLayout();
-    QLabel *cmdLabel = new QLabel("COMMANDS", sidebar);
+    QLabel *cmdLabel = new QLabel("命令", sidebar);
     cmdLabel->setObjectName("labelSectionCommands");
     QPushButton *addCmdBtn = new QPushButton("+", sidebar);
     addCmdBtn->setObjectName("btnAddCommand");
     addCmdBtn->setFixedSize(24, 24);
-    addCmdBtn->setToolTip("Add Command");
+    addCmdBtn->setToolTip("新建命令");
     cmdHeader->addWidget(cmdLabel);
     cmdHeader->addStretch();
     cmdHeader->addWidget(addCmdBtn);
@@ -130,18 +163,18 @@ void MainWindow::setupSidebar(QWidget *sidebar)
 
     m_commandPanel = new CommandPanel(sidebar);
     m_commandPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_commandPanel->setMinimumHeight(80);
-    m_commandPanel->setMaximumHeight(160);
+    m_commandPanel->setMinimumHeight(60);
+    m_commandPanel->setMaximumHeight(140);
     layout->addWidget(m_commandPanel);
 
     // ---- Scripts section ----
     QHBoxLayout *scriptHeader = new QHBoxLayout();
-    QLabel *scriptLabel = new QLabel("SCRIPTS", sidebar);
+    QLabel *scriptLabel = new QLabel("脚本", sidebar);
     scriptLabel->setObjectName("labelSectionScripts");
     QPushButton *addScriptBtn = new QPushButton("+", sidebar);
     addScriptBtn->setObjectName("btnAddScript");
     addScriptBtn->setFixedSize(24, 24);
-    addScriptBtn->setToolTip("Add Script");
+    addScriptBtn->setToolTip("新建脚本");
     scriptHeader->addWidget(scriptLabel);
     scriptHeader->addStretch();
     scriptHeader->addWidget(addScriptBtn);
@@ -154,6 +187,7 @@ void MainWindow::setupSidebar(QWidget *sidebar)
 
     // Wire up signals
     connect(addConnBtn,   &QPushButton::clicked, this, &MainWindow::onAddConnection);
+    connect(addSubBtn,    &QPushButton::clicked, this, &MainWindow::onAddSubscription);
     connect(addCmdBtn,    &QPushButton::clicked, this, &MainWindow::onAddCommand);
     connect(addScriptBtn, &QPushButton::clicked, this, &MainWindow::onAddScript);
 
@@ -170,6 +204,11 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     connect(m_connectionPanel, &ConnectionPanel::selectionChanged,
             this, &MainWindow::onConnectionSelectionChanged);
 
+    connect(m_subscriptionPanel, &SubscriptionPanel::addRequested,
+            this, &MainWindow::onAddSubscription);
+    connect(m_subscriptionPanel, &SubscriptionPanel::unsubscribeRequested,
+            this, &MainWindow::onUnsubscribeRequested);
+
     connect(m_commandPanel, &CommandPanel::editRequested,
             this, &MainWindow::onEditCommand);
     connect(m_commandPanel, &CommandPanel::deleteRequested,
@@ -183,8 +222,8 @@ void MainWindow::setupSidebar(QWidget *sidebar)
                 if (!item) return;
                 int id = item->data(Qt::UserRole).toInt();
                 QMenu menu(this);
-                QAction *actEdit   = menu.addAction("Edit");
-                QAction *actDelete = menu.addAction("Delete");
+                QAction *actEdit   = menu.addAction("编辑");
+                QAction *actDelete = menu.addAction("删除");
                 QAction *chosen = menu.exec(m_scriptList->viewport()->mapToGlobal(pos));
                 if (chosen == actEdit)   onEditScript(id);
                 if (chosen == actDelete) onDeleteScript(id);
@@ -204,7 +243,7 @@ void MainWindow::setupContentArea(QWidget *content)
 
     // Chat tab
     m_chatWidget = new ChatWidget(content);
-    m_tabWidget->addTab(m_chatWidget, "Chat");
+    m_tabWidget->addTab(m_chatWidget, "消息");
 
     connect(m_chatWidget, &ChatWidget::sendRequested,
             this, &MainWindow::onSendRequested);
@@ -217,7 +256,7 @@ void MainWindow::setupContentArea(QWidget *content)
     monitorLayout->setContentsMargins(4, 4, 4, 4);
 
     m_monitorTable = new QTableWidget(0, 4, monitorWidget);
-    m_monitorTable->setHorizontalHeaderLabels({"Time", "Direction", "Topic", "Payload"});
+    m_monitorTable->setHorizontalHeaderLabels({"时间", "方向", "主题", "内容"});
     m_monitorTable->horizontalHeader()->setStretchLastSection(true);
     m_monitorTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     m_monitorTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
@@ -231,7 +270,7 @@ void MainWindow::setupContentArea(QWidget *content)
     m_monitorTable->verticalHeader()->setVisible(false);
     monitorLayout->addWidget(m_monitorTable);
 
-    m_tabWidget->addTab(monitorWidget, "Monitor");
+    m_tabWidget->addTab(monitorWidget, "监控");
 
     layout->addWidget(m_tabWidget);
 }
@@ -240,21 +279,49 @@ void MainWindow::setupMenuBar()
 {
     QMenuBar *mb = menuBar();
 
-    QMenu *fileMenu = mb->addMenu("File");
-    QAction *actQuit = fileMenu->addAction("Quit");
+    QMenu *fileMenu = mb->addMenu("文件");
+    QAction *actQuit = fileMenu->addAction("退出");
     connect(actQuit, &QAction::triggered, this, &QMainWindow::close);
 
-    QMenu *connMenu = mb->addMenu("Connections");
-    QAction *actAddConn = connMenu->addAction("New Connection...");
+    QMenu *connMenu = mb->addMenu("连接");
+    QAction *actAddConn = connMenu->addAction("新建连接...");
     connect(actAddConn, &QAction::triggered, this, &MainWindow::onAddConnection);
 
-    QMenu *helpMenu = mb->addMenu("Help");
-    QAction *actAbout = helpMenu->addAction("About");
+    QMenu *helpMenu = mb->addMenu("帮助");
+    QAction *actAbout = helpMenu->addAction("关于");
     connect(actAbout, &QAction::triggered, [this]() {
-        QMessageBox::about(this, "About MQTT Assistant",
-            "<b>MQTT Assistant</b><br>A Qt6 MQTT client application.<br><br>"
-            "Built with Qt " QT_VERSION_STR);
+        QMessageBox::about(this, "关于 MQTT 助手",
+            "<b>MQTT 助手</b><br>基于 Qt6 的 MQTT 客户端工具。<br><br>"
+            "编译版本：Qt " QT_VERSION_STR);
     });
+}
+
+// ──────────────────────────────────────────────
+//  Toast Notification
+// ──────────────────────────────────────────────
+
+void MainWindow::showToast(const QString &message, int durationMs)
+{
+    m_toastLabel->setText(message);
+    m_toastLabel->setFixedWidth(qMin(width() - 40, 380));
+    m_toastLabel->adjustSize();
+    int x = (width() - m_toastLabel->width()) / 2;
+    int y = height() - m_toastLabel->height() - 70;
+    m_toastLabel->move(x, y);
+    m_toastLabel->show();
+    m_toastLabel->raise();
+    m_toastTimer->stop();
+    m_toastTimer->start(durationMs);
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    if (m_toastLabel && m_toastLabel->isVisible()) {
+        int x = (width() - m_toastLabel->width()) / 2;
+        int y = height() - m_toastLabel->height() - 70;
+        m_toastLabel->move(x, y);
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -288,7 +355,6 @@ void MainWindow::loadAllData()
 
 void MainWindow::refreshScriptList()
 {
-    // Block signals while rebuilding to avoid spurious itemChanged
     m_scriptList->blockSignals(true);
     m_scriptList->clear();
     for (const ScriptConfig &s : m_scripts.values()) {
@@ -302,6 +368,20 @@ void MainWindow::refreshScriptList()
 }
 
 // ──────────────────────────────────────────────
+//  Subscription helpers
+// ──────────────────────────────────────────────
+
+void MainWindow::subscribeAllForConnection(int connectionId)
+{
+    if (!m_clients.contains(connectionId)) return;
+    MqttClient *client = m_clients[connectionId];
+    if (!client->isConnected()) return;
+    QList<SubscriptionConfig> subs = m_db.loadSubscriptions(connectionId);
+    for (const SubscriptionConfig &s : subs)
+        client->subscribe(s.topic, s.qos);
+}
+
+// ──────────────────────────────────────────────
 //  Connection Panel Slots
 // ──────────────────────────────────────────────
 
@@ -312,17 +392,18 @@ void MainWindow::onAddConnection()
         return;
     MqttConnectionConfig config = dlg.config();
     if (config.name.isEmpty()) {
-        QMessageBox::warning(this, "Invalid", "Connection name cannot be empty.");
+        showToast("连接名称不能为空");
         return;
     }
     int id = m_db.saveConnection(config);
     if (id < 0) {
-        QMessageBox::critical(this, "Error", "Failed to save connection.");
+        showToast("保存连接失败");
         return;
     }
     config.id = id;
     m_connections[id] = config;
     m_connectionPanel->addConnection(config, false);
+    showToast("连接已添加：" + config.name);
 }
 
 void MainWindow::onEditConnection(int connectionId)
@@ -337,16 +418,16 @@ void MainWindow::onEditConnection(int connectionId)
     m_db.updateConnection(updated);
     m_connections[connectionId] = updated;
     m_connectionPanel->updateConnection(updated);
+    showToast("连接已更新：" + updated.name);
 }
 
 void MainWindow::onDeleteConnection(int connectionId)
 {
-    int ret = QMessageBox::question(this, "Delete Connection",
-        "Delete this connection and all its messages?",
+    int ret = QMessageBox::question(this, "删除连接",
+        "确定要删除此连接及其所有消息记录吗？",
         QMessageBox::Yes | QMessageBox::No);
     if (ret != QMessageBox::Yes) return;
 
-    // Disconnect if active
     if (m_clients.contains(connectionId)) {
         m_clients[connectionId]->disconnectFromHost();
         m_clients[connectionId]->deleteLater();
@@ -359,9 +440,11 @@ void MainWindow::onDeleteConnection(int connectionId)
 
     if (m_activeConnectionId == connectionId) {
         m_activeConnectionId = -1;
-        setWindowTitle("MQTT Assistant");
-        m_statusLabel->setText("Not connected");
+        setWindowTitle("MQTT 助手");
+        m_statusLabel->setText("未连接");
+        m_subscriptionPanel->clearSubscriptions();
     }
+    showToast("连接已删除");
 }
 
 void MainWindow::onConnectRequested(int connectionId)
@@ -369,24 +452,27 @@ void MainWindow::onConnectRequested(int connectionId)
     if (!m_connections.contains(connectionId)) return;
     const MqttConnectionConfig &config = m_connections[connectionId];
 
-    // Create client if needed
     if (!m_clients.contains(connectionId)) {
         MqttClient *client = new MqttClient(this);
         m_clients[connectionId] = client;
 
-    connect(client, &MqttClient::connected, this, [this, connectionId]() {
+        connect(client, &MqttClient::connected, this, [this, connectionId]() {
             m_connectionPanel->setConnected(connectionId, true);
             if (m_activeConnectionId == connectionId) {
                 const QString &name = m_connections.value(connectionId).name;
-                setWindowTitle("MQTT Assistant - " + name);
-                m_statusLabel->setText("Connected to " + name);
+                setWindowTitle("MQTT 助手 - " + name);
+                m_statusLabel->setText("已连接：" + name);
+                showToast("已连接到 " + name);
             }
+            // Auto-subscribe to saved subscriptions
+            subscribeAllForConnection(connectionId);
         });
         connect(client, &MqttClient::disconnected, this, [this, connectionId]() {
             m_connectionPanel->setConnected(connectionId, false);
             if (m_activeConnectionId == connectionId) {
-                setWindowTitle("MQTT Assistant");
-                m_statusLabel->setText("Disconnected");
+                setWindowTitle("MQTT 助手");
+                m_statusLabel->setText("已断开连接");
+                showToast("已断开连接");
             }
         });
         connect(client, &MqttClient::messageReceived, this,
@@ -396,27 +482,16 @@ void MainWindow::onConnectRequested(int connectionId)
                 });
         connect(client, &MqttClient::errorOccurred, this,
                 [this](const QString &msg) {
-                    statusBar()->showMessage("Error: " + msg, 5000);
+                    showToast("错误：" + msg, 4000);
                 });
     }
 
-    // Wire script engine to this client if it's the active one
-    // (script engine tracks one client)
     MqttClient *client = m_clients[connectionId];
-
-    // Disconnect existing signal connections to avoid re-connections from before
-    // Reconnect connected/disconnected so we update the panel correctly
-    // (Already wired above per-client – the lambda captures ensure the right id)
-
     client->connectToHost(config);
 
-    // Set active connection on connect
     m_activeConnectionId = connectionId;
-
-    // Update script engine
     m_scriptEngine.setClient(client);
 
-    // Filter scripts for this connection
     QList<ScriptConfig> connScripts;
     for (const ScriptConfig &s : m_scripts.values()) {
         if (s.connectionId == connectionId || s.connectionId == -1)
@@ -424,7 +499,6 @@ void MainWindow::onConnectRequested(int connectionId)
     }
     m_scriptEngine.setScripts(connScripts);
 
-    // Update command panel client
     m_commandPanel->setClient(client);
     m_chatWidget->setClient(client);
 
@@ -432,7 +506,6 @@ void MainWindow::onConnectRequested(int connectionId)
     QList<MessageRecord> history = m_db.loadMessages(connectionId, 100);
     m_chatWidget->loadMessages(history);
 
-    // Also populate monitor table
     m_monitorTable->setRowCount(0);
     for (const MessageRecord &msg : history)
         addMessageToMonitor(msg);
@@ -448,7 +521,6 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
 {
     if (connectionId == m_activeConnectionId) return;
 
-    // Just switch display – don't connect/disconnect
     m_activeConnectionId = connectionId;
 
     if (m_connections.contains(connectionId)) {
@@ -457,16 +529,20 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
 
         if (isConn) {
             const QString &name = m_connections[connectionId].name;
-            setWindowTitle("MQTT Assistant - " + name);
-            m_statusLabel->setText("Connected to " + name);
+            setWindowTitle("MQTT 助手 - " + name);
+            m_statusLabel->setText("已连接：" + name);
             m_commandPanel->setClient(m_clients[connectionId]);
             m_chatWidget->setClient(m_clients[connectionId]);
         } else {
-            setWindowTitle("MQTT Assistant");
-            m_statusLabel->setText("Not connected");
+            setWindowTitle("MQTT 助手");
+            m_statusLabel->setText("未连接");
             m_commandPanel->setClient(nullptr);
             m_chatWidget->setClient(nullptr);
         }
+
+        // Load subscriptions for this connection
+        QList<SubscriptionConfig> subs = m_db.loadSubscriptions(connectionId);
+        m_subscriptionPanel->loadSubscriptions(subs);
 
         // Load message history
         QList<MessageRecord> history = m_db.loadMessages(connectionId, 100);
@@ -475,6 +551,54 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
         for (const MessageRecord &msg : history)
             addMessageToMonitor(msg);
     }
+}
+
+// ──────────────────────────────────────────────
+//  Subscription Panel Slots
+// ──────────────────────────────────────────────
+
+void MainWindow::onAddSubscription()
+{
+    if (m_activeConnectionId < 0) {
+        showToast("请先选择一个连接");
+        return;
+    }
+    bool ok = false;
+    QString topic = QInputDialog::getText(this, "新增订阅", "输入订阅主题（支持通配符 # 和 +）：",
+                                          QLineEdit::Normal, QString(), &ok);
+    if (!ok || topic.trimmed().isEmpty()) return;
+    topic = topic.trimmed();
+
+    SubscriptionConfig sub;
+    sub.connectionId = m_activeConnectionId;
+    sub.topic        = topic;
+    sub.qos          = 0;
+    int id = m_db.saveSubscription(sub);
+    if (id < 0) {
+        showToast("保存订阅失败");
+        return;
+    }
+    sub.id = id;
+    m_subscriptionPanel->addSubscription(sub);
+
+    // Subscribe immediately if connected
+    if (m_clients.contains(m_activeConnectionId) &&
+        m_clients[m_activeConnectionId]->isConnected()) {
+        m_clients[m_activeConnectionId]->subscribe(topic, 0);
+    }
+    showToast("已订阅：" + topic);
+}
+
+void MainWindow::onUnsubscribeRequested(const QString &topic, int id)
+{
+    m_db.deleteSubscription(id);
+    m_subscriptionPanel->removeSubscriptionById(id);
+
+    if (m_clients.contains(m_activeConnectionId) &&
+        m_clients[m_activeConnectionId]->isConnected()) {
+        m_clients[m_activeConnectionId]->unsubscribe(topic);
+    }
+    showToast("已取消订阅：" + topic);
 }
 
 // ──────────────────────────────────────────────
@@ -487,18 +611,19 @@ void MainWindow::onAddCommand()
     if (dlg.exec() != QDialog::Accepted) return;
     CommandConfig cmd = dlg.config();
     if (cmd.name.isEmpty()) {
-        QMessageBox::warning(this, "Invalid", "Command name cannot be empty.");
+        showToast("命令名称不能为空");
         return;
     }
     cmd.connectionId = m_activeConnectionId;
     int id = m_db.saveCommand(cmd);
     if (id < 0) {
-        QMessageBox::critical(this, "Error", "Failed to save command.");
+        showToast("保存命令失败");
         return;
     }
     cmd.id = id;
     m_commands[id] = cmd;
     m_commandPanel->addCommand(cmd);
+    showToast("命令已添加：" + cmd.name);
 }
 
 void MainWindow::onEditCommand(int commandId)
@@ -512,16 +637,18 @@ void MainWindow::onEditCommand(int commandId)
     m_db.updateCommand(updated);
     m_commands[commandId] = updated;
     m_commandPanel->updateCommand(updated);
+    showToast("命令已更新");
 }
 
 void MainWindow::onDeleteCommand(int commandId)
 {
-    int ret = QMessageBox::question(this, "Delete Command",
-        "Delete this command?", QMessageBox::Yes | QMessageBox::No);
+    int ret = QMessageBox::question(this, "删除命令",
+        "确定要删除此命令吗？", QMessageBox::Yes | QMessageBox::No);
     if (ret != QMessageBox::Yes) return;
     m_db.deleteCommand(commandId);
     m_commands.remove(commandId);
     m_commandPanel->removeCommand(commandId);
+    showToast("命令已删除");
 }
 
 // ──────────────────────────────────────────────
@@ -534,19 +661,20 @@ void MainWindow::onAddScript()
     if (dlg.exec() != QDialog::Accepted) return;
     ScriptConfig script = dlg.config();
     if (script.name.isEmpty()) {
-        QMessageBox::warning(this, "Invalid", "Script name cannot be empty.");
+        showToast("脚本名称不能为空");
         return;
     }
     script.connectionId = m_activeConnectionId;
     int id = m_db.saveScript(script);
     if (id < 0) {
-        QMessageBox::critical(this, "Error", "Failed to save script.");
+        showToast("保存脚本失败");
         return;
     }
     script.id = id;
     m_scripts[id] = script;
     m_scriptEngine.addScript(script);
     refreshScriptList();
+    showToast("脚本已添加：" + script.name);
 }
 
 void MainWindow::onEditScript(int scriptId)
@@ -561,17 +689,19 @@ void MainWindow::onEditScript(int scriptId)
     m_scripts[scriptId]      = updated;
     m_scriptEngine.updateScript(updated);
     refreshScriptList();
+    showToast("脚本已更新");
 }
 
 void MainWindow::onDeleteScript(int scriptId)
 {
-    int ret = QMessageBox::question(this, "Delete Script",
-        "Delete this script?", QMessageBox::Yes | QMessageBox::No);
+    int ret = QMessageBox::question(this, "删除脚本",
+        "确定要删除此脚本吗？", QMessageBox::Yes | QMessageBox::No);
     if (ret != QMessageBox::Yes) return;
     m_db.deleteScript(scriptId);
     m_scripts.remove(scriptId);
     m_scriptEngine.removeScript(scriptId);
     refreshScriptList();
+    showToast("脚本已删除");
 }
 
 void MainWindow::onScriptItemChanged(QListWidgetItem *item)
@@ -592,12 +722,12 @@ void MainWindow::onScriptItemChanged(QListWidgetItem *item)
 void MainWindow::onSendRequested(const QString &topic, const QString &payload)
 {
     if (m_activeConnectionId < 0 || !m_clients.contains(m_activeConnectionId)) {
-        QMessageBox::warning(this, "Not Connected", "Please connect first.");
+        showToast("请先连接到 MQTT 服务器");
         return;
     }
     MqttClient *client = m_clients[m_activeConnectionId];
     if (!client->isConnected()) {
-        QMessageBox::warning(this, "Not Connected", "Please connect first.");
+        showToast("请先连接到 MQTT 服务器");
         return;
     }
     client->publish(topic, payload);
@@ -607,16 +737,34 @@ void MainWindow::onSendRequested(const QString &topic, const QString &payload)
 void MainWindow::onSubscribeRequested(const QString &topic)
 {
     if (m_activeConnectionId < 0 || !m_clients.contains(m_activeConnectionId)) {
-        QMessageBox::warning(this, "Not Connected", "Please connect first.");
+        showToast("请先连接到 MQTT 服务器");
         return;
     }
     MqttClient *client = m_clients[m_activeConnectionId];
     if (!client->isConnected()) {
-        QMessageBox::warning(this, "Not Connected", "Please connect first.");
+        showToast("请先连接到 MQTT 服务器");
         return;
     }
     client->subscribe(topic, 0);
-    statusBar()->showMessage("Subscribed to: " + topic, 3000);
+
+    // Persist to DB if not already saved
+    QList<SubscriptionConfig> existing = m_db.loadSubscriptions(m_activeConnectionId);
+    bool alreadySaved = false;
+    for (const SubscriptionConfig &s : existing) {
+        if (s.topic == topic) { alreadySaved = true; break; }
+    }
+    if (!alreadySaved) {
+        SubscriptionConfig sub;
+        sub.connectionId = m_activeConnectionId;
+        sub.topic        = topic;
+        sub.qos          = 0;
+        int id = m_db.saveSubscription(sub);
+        if (id >= 0) {
+            sub.id = id;
+            m_subscriptionPanel->addSubscription(sub);
+        }
+    }
+    showToast("已订阅：" + topic);
 }
 
 // ──────────────────────────────────────────────
@@ -648,12 +796,11 @@ void MainWindow::addMessageToMonitor(const MessageRecord &msg)
     m_monitorTable->setItem(row, 0, new QTableWidgetItem(
         msg.timestamp.toString("hh:mm:ss")));
     m_monitorTable->setItem(row, 1, new QTableWidgetItem(
-        msg.outgoing ? "↑ Sent" : "↓ Recv"));
+        msg.outgoing ? "↑ 发送" : "↓ 接收"));
     m_monitorTable->setItem(row, 2, new QTableWidgetItem(msg.topic));
     m_monitorTable->setItem(row, 3, new QTableWidgetItem(msg.payload));
 
-    // Colour code direction
-    QColor dirColor = msg.outgoing ? QColor("#ea5413") : QColor("#4caf50");
+    QColor dirColor = msg.outgoing ? QColor("#ea5413") : QColor("#1e9e50");
     m_monitorTable->item(row, 1)->setForeground(dirColor);
 
     m_monitorTable->scrollToBottom();

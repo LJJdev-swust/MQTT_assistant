@@ -15,7 +15,8 @@ SOURCES += \
     src/ui/widgets/chatwidget.cpp \
     src/ui/widgets/messagebubbleitem.cpp \
     src/ui/widgets/connectionpanel.cpp \
-    src/ui/widgets/commandpanel.cpp
+    src/ui/widgets/commandpanel.cpp \
+    src/ui/widgets/subscriptionpanel.cpp
 
 HEADERS += \
     src/core/models.h \
@@ -29,7 +30,8 @@ HEADERS += \
     src/ui/widgets/chatwidget.h \
     src/ui/widgets/messagebubbleitem.h \
     src/ui/widgets/connectionpanel.h \
-    src/ui/widgets/commandpanel.h
+    src/ui/widgets/commandpanel.h \
+    src/ui/widgets/subscriptionpanel.h
 
 RESOURCES += resources/resources.qrc
 

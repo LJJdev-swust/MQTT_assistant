@@ -17,6 +17,7 @@
 #include "widgets/connectionpanel.h"
 #include "widgets/commandpanel.h"
 #include "widgets/chatwidget.h"
+#include "widgets/subscriptionpanel.h"
 
 class MainWindow : public QMainWindow
 {
@@ -24,6 +25,9 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     // Connection panel slots
@@ -45,8 +49,9 @@ private slots:
     void onDeleteScript(int scriptId);
     void onScriptItemChanged(QListWidgetItem *item);
 
-    // MQTT client slots
-
+    // Subscription panel slots
+    void onAddSubscription();
+    void onUnsubscribeRequested(const QString &topic, int id);
 
     // Chat widget slots
     void onSendRequested(const QString &topic, const QString &payload);
@@ -62,6 +67,8 @@ private:
     void addMessageToMonitor(const MessageRecord &msg);
     void saveAndDisplayMessage(const QString &topic, const QString &payload,
                                bool outgoing, int connectionId);
+    void showToast(const QString &message, int durationMs = 2500);
+    void subscribeAllForConnection(int connectionId);
 
     MqttClient      *clientForId(int connectionId);
     MqttConnectionConfig configForId(int connectionId) const;
@@ -79,13 +86,18 @@ private:
     int m_activeConnectionId;
 
     // UI widgets
-    ConnectionPanel *m_connectionPanel;
-    CommandPanel    *m_commandPanel;
-    QListWidget     *m_scriptList;
-    ChatWidget      *m_chatWidget;
-    QTableWidget    *m_monitorTable;
-    QTabWidget      *m_tabWidget;
-    QLabel          *m_statusLabel;
+    ConnectionPanel   *m_connectionPanel;
+    SubscriptionPanel *m_subscriptionPanel;
+    CommandPanel      *m_commandPanel;
+    QListWidget       *m_scriptList;
+    ChatWidget        *m_chatWidget;
+    QTableWidget      *m_monitorTable;
+    QTabWidget        *m_tabWidget;
+    QLabel            *m_statusLabel;
+
+    // Toast
+    QLabel  *m_toastLabel;
+    QTimer  *m_toastTimer;
 };
 
 #endif // MAINWINDOW_H

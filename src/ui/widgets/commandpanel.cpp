@@ -73,12 +73,12 @@ void CommandPanel::onContextMenu(const QPoint &pos)
     bool looping = m_loopTimers.contains(id);
 
     QMenu menu(this);
-    QAction *actSend      = menu.addAction("Send");
-    QAction *actStartLoop = menu.addAction("Start Loop");
-    QAction *actStopLoop  = menu.addAction("Stop Loop");
+    QAction *actSend      = menu.addAction("发送");
+    QAction *actStartLoop = menu.addAction("开始循环");
+    QAction *actStopLoop  = menu.addAction("停止循环");
     menu.addSeparator();
-    QAction *actEdit   = menu.addAction("Edit");
-    QAction *actDelete = menu.addAction("Delete");
+    QAction *actEdit   = menu.addAction("编辑");
+    QAction *actDelete = menu.addAction("删除");
 
     actStartLoop->setEnabled(!looping);
     actStopLoop->setEnabled(looping);
@@ -105,7 +105,7 @@ void CommandPanel::onLoopTimer()
 void CommandPanel::sendCommand(int commandId)
 {
     if (!m_client || !m_client->isConnected()) {
-        QMessageBox::warning(this, "Not Connected", "Please connect to an MQTT broker first.");
+        QMessageBox::warning(this, "未连接", "请先连接到 MQTT 服务器。");
         return;
     }
     if (!m_commands.contains(commandId)) return;
@@ -129,7 +129,7 @@ void CommandPanel::startLoop(int commandId)
     // Update item display to indicate looping
     QListWidgetItem *item = findItem(commandId);
     if (item)
-        item->setText(cmd.name + " [looping]");
+        item->setText(cmd.name + " [循环中]");
 }
 
 void CommandPanel::stopLoop(int commandId)

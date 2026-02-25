@@ -2,6 +2,7 @@
 #include <QSslCertificate>
 #include <QSslKey>
 #include <QFile>
+#include <QStringDecoder>
 
 MqttClient::MqttClient(QObject *parent)
     : QObject(parent)
@@ -115,7 +116,15 @@ void MqttClient::onDisconnected()
 
 void MqttClient::onMessageReceived(const QByteArray &payload, const QMqttTopicName &topic)
 {
-    emit messageReceived(topic.name(), QString::fromUtf8(payload));
+    const QByteArray &bytes = message.payload();
+    QString text;
+    // Try to decode as UTF-8; if the payload has invalid bytes, show as HEX
+    auto decoder = QStringDecoder(QStringConverter::Utf8);
+    text = decoder(bytes);
+    if (decoder.hasError()) {
+        text = "HEX: " + QString::fromLatin1(bytes.toHex(' ')).toUpper();
+    }
+    emit messageReceived(message.topic().name(), text);
 }
 
 void MqttClient::onErrorChanged(QMqttClient::ClientError error)
