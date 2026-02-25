@@ -3,6 +3,7 @@
 #include <QSqlError>
 #include <QStandardPaths>
 #include <QDir>
+#include <QFileInfo>
 #include <QDebug>
 #include <QVariant>
 
@@ -16,14 +17,19 @@ DatabaseManager::~DatabaseManager()
     close();
 }
 
-bool DatabaseManager::open()
+bool DatabaseManager::open(const QString &dbPath)
 {
-    QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir().mkpath(dataDir);
-    QString dbPath = dataDir + "/mqtt_assistant.db";
+    QString path = dbPath;
+    if (path.isEmpty()) {
+        QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        QDir().mkpath(dataDir);
+        path = dataDir + "/mqtt_assistant.db";
+    } else {
+        QDir().mkpath(QFileInfo(path).absolutePath());
+    }
 
     m_db = QSqlDatabase::addDatabase("QSQLITE", "mqtt_assistant_db");
-    m_db.setDatabaseName(dbPath);
+    m_db.setDatabaseName(path);
 
     if (!m_db.open()) {
         qWarning() << "Failed to open database:" << m_db.lastError().text();
@@ -105,6 +111,7 @@ bool DatabaseManager::createTables()
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     ok = q.exec(
+        "CREATE TABLE IF NOT EXISTS messages ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "connection_id INTEGER NOT NULL,"
         "topic TEXT NOT NULL,"

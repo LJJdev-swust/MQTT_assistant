@@ -19,6 +19,9 @@
 #include <QListWidgetItem>
 #include <QInputDialog>
 #include <QResizeEvent>
+#include <QFileDialog>
+#include <QSettings>
+#include <QCoreApplication>
 
 // ──────────────────────────────────────────────
 //  Construction
@@ -34,7 +37,23 @@ MainWindow::MainWindow(QWidget *parent)
     setMinimumSize(960, 640);
     resize(1200, 780);
 
-    if (!m_db.open())
+    // Determine the database directory, prompting the user on first run or if unset
+    QSettings settings("MQTTAssistant", "MQTT_assistant");
+    QString dbDir = settings.value("database/directory").toString();
+    if (dbDir.isEmpty()) {
+        QString defaultDir = QCoreApplication::applicationDirPath();
+        dbDir = QFileDialog::getExistingDirectory(
+            nullptr,
+            "选择数据库存储路径",
+            defaultDir,
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
+        );
+        if (dbDir.isEmpty())
+            dbDir = defaultDir;
+        settings.setValue("database/directory", dbDir);
+    }
+
+    if (!m_db.open(dbDir + "/mqtt_assistant.db"))
         QMessageBox::critical(this, "数据库错误", "无法打开数据库，请检查存储权限。");
 
     setupMenuBar();
