@@ -95,7 +95,16 @@ bool DatabaseManager::createTables()
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     ok = q.exec(
-        "CREATE TABLE IF NOT EXISTS messages ("
+        "CREATE TABLE IF NOT EXISTS subscriptions ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "connection_id INTEGER NOT NULL,"
+        "topic TEXT NOT NULL,"
+        "qos INTEGER NOT NULL DEFAULT 0"
+        ")"
+    );
+    if (!ok) { qWarning() << q.lastError().text(); return false; }
+
+    ok = q.exec(
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "connection_id INTEGER NOT NULL,"
         "topic TEXT NOT NULL,"
@@ -336,6 +345,45 @@ bool DatabaseManager::deleteScript(int id)
 {
     QSqlQuery q(m_db);
     q.prepare("DELETE FROM scripts WHERE id=:id");
+    q.bindValue(":id", id);
+    return q.exec();
+}
+
+// ---- Subscriptions ----
+
+QList<SubscriptionConfig> DatabaseManager::loadSubscriptions(int connectionId)
+{
+    QList<SubscriptionConfig> list;
+    QSqlQuery q(m_db);
+    q.prepare("SELECT id,connection_id,topic,qos FROM subscriptions WHERE connection_id=:connid ORDER BY id");
+    q.bindValue(":connid", connectionId);
+    if (!q.exec()) { qWarning() << q.lastError().text(); return list; }
+    while (q.next()) {
+        SubscriptionConfig s;
+        s.id           = q.value(0).toInt();
+        s.connectionId = q.value(1).toInt();
+        s.topic        = q.value(2).toString();
+        s.qos          = q.value(3).toInt();
+        list.append(s);
+    }
+    return list;
+}
+
+int DatabaseManager::saveSubscription(const SubscriptionConfig &sub)
+{
+    QSqlQuery q(m_db);
+    q.prepare("INSERT INTO subscriptions (connection_id,topic,qos) VALUES (:connid,:topic,:qos)");
+    q.bindValue(":connid", sub.connectionId);
+    q.bindValue(":topic",  sub.topic);
+    q.bindValue(":qos",    sub.qos);
+    if (!q.exec()) { qWarning() << q.lastError().text(); return -1; }
+    return q.lastInsertId().toInt();
+}
+
+bool DatabaseManager::deleteSubscription(int id)
+{
+    QSqlQuery q(m_db);
+    q.prepare("DELETE FROM subscriptions WHERE id=:id");
     q.bindValue(":id", id);
     return q.exec();
 }

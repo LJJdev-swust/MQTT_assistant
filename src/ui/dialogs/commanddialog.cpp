@@ -10,7 +10,7 @@ CommandDialog::CommandDialog(QWidget *parent)
 {
     setupUi();
     populateFrom(CommandConfig());
-    setWindowTitle("New Command");
+    setWindowTitle("新建命令");
 }
 
 CommandDialog::CommandDialog(const CommandConfig &config, QWidget *parent)
@@ -18,7 +18,7 @@ CommandDialog::CommandDialog(const CommandConfig &config, QWidget *parent)
 {
     setupUi();
     populateFrom(config);
-    setWindowTitle("Edit Command");
+    setWindowTitle("编辑命令");
 }
 
 void CommandDialog::setupUi()
@@ -33,29 +33,29 @@ void CommandDialog::setupUi()
     form->setSpacing(8);
 
     m_nameEdit = new QLineEdit(this);
-    m_nameEdit->setPlaceholderText("Command name");
-    form->addRow("Name:", m_nameEdit);
+    m_nameEdit->setPlaceholderText("命令名称");
+    form->addRow("名称:", m_nameEdit);
 
     m_topicEdit = new QLineEdit(this);
-    m_topicEdit->setPlaceholderText("e.g. home/lights/on");
-    form->addRow("Topic:", m_topicEdit);
+    m_topicEdit->setPlaceholderText("如: home/lights/on");
+    form->addRow("主题:", m_topicEdit);
 
     m_payloadEdit = new QTextEdit(this);
-    m_payloadEdit->setPlaceholderText("Message payload...");
+    m_payloadEdit->setPlaceholderText("消息内容...");
     m_payloadEdit->setMaximumHeight(80);
-    form->addRow("Payload:", m_payloadEdit);
+    form->addRow("消息:", m_payloadEdit);
 
     m_qosCombo = new QComboBox(this);
-    m_qosCombo->addItem("0 - At most once");
-    m_qosCombo->addItem("1 - At least once");
-    m_qosCombo->addItem("2 - Exactly once");
+    m_qosCombo->addItem("0 - 最多一次");
+    m_qosCombo->addItem("1 - 至少一次");
+    m_qosCombo->addItem("2 - 恰好一次");
     form->addRow("QoS:", m_qosCombo);
 
-    m_retainCheck = new QCheckBox("Retain message", this);
-    form->addRow("Retain:", m_retainCheck);
+    m_retainCheck = new QCheckBox("保留消息", this);
+    form->addRow("保留:", m_retainCheck);
 
-    m_loopCheck = new QCheckBox("Enable loop", this);
-    form->addRow("Loop:", m_loopCheck);
+    m_loopCheck = new QCheckBox("启用循环", this);
+    form->addRow("循环:", m_loopCheck);
 
     QHBoxLayout *intervalRow = new QHBoxLayout();
     m_loopIntervalSpin = new QSpinBox(this);
@@ -63,7 +63,7 @@ void CommandDialog::setupUi()
     m_loopIntervalSpin->setValue(1000);
     m_loopIntervalSpin->setSuffix(" ms");
     m_loopIntervalSpin->setEnabled(false);
-    QLabel *intervalLabel = new QLabel("Interval:", this);
+    QLabel *intervalLabel = new QLabel("间隔:", this);
     intervalRow->addWidget(intervalLabel);
     intervalRow->addWidget(m_loopIntervalSpin);
     intervalRow->addStretch();
@@ -73,6 +73,8 @@ void CommandDialog::setupUi()
 
     QDialogButtonBox *bbox = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    bbox->button(QDialogButtonBox::Ok)->setText("确定");
+    bbox->button(QDialogButtonBox::Cancel)->setText("取消");
     mainLayout->addWidget(bbox);
 
     connect(bbox,        &QDialogButtonBox::accepted, this, &QDialog::accept);

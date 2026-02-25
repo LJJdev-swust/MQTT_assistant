@@ -59,6 +59,16 @@ struct ScriptConfig {
           responseQos(0), responseRetain(false), delayMs(0), connectionId(-1) {}
 };
 
+struct SubscriptionConfig {
+    int id;
+    int connectionId;
+    QString topic;
+    int qos;
+
+    SubscriptionConfig()
+        : id(-1), connectionId(-1), qos(0) {}
+};
+
 struct MessageRecord {
     int id;
     int connectionId;
