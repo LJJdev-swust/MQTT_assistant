@@ -61,8 +61,7 @@ void MqttClient::connectToHost(const MqttConnectionConfig &config)
                 }
             }
         }
-        m_client->setSslConfiguration(sslConfig);
-        m_client->connectToHostEncrypted(config.host, static_cast<quint16>(config.port));
+        m_client->connectToHostEncrypted(sslConfig);
     } else {
         m_client->connectToHost();
     }
@@ -114,9 +113,9 @@ void MqttClient::onDisconnected()
     emit disconnected();
 }
 
-void MqttClient::onMessageReceived(const QMqttMessage &message)
+void MqttClient::onMessageReceived(const QByteArray &payload, const QMqttTopicName &topic)
 {
-    emit messageReceived(message.topic().name(), QString::fromUtf8(message.payload()));
+    emit messageReceived(topic.name(), QString::fromUtf8(payload));
 }
 
 void MqttClient::onErrorChanged(QMqttClient::ClientError error)
