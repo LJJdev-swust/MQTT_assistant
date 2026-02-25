@@ -13,7 +13,7 @@ public:
     explicit DatabaseManager(QObject *parent = nullptr);
     ~DatabaseManager();
 
-    bool open();
+    bool open(const QString &dbPath = QString());
     void close();
 
     // Connections
