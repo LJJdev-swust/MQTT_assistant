@@ -1,6 +1,6 @@
 #include "scriptengine.h"
 #include "mqttclient.h"
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QDateTime>
 #include <QTimer>
 
@@ -71,10 +71,11 @@ void ScriptEngine::onMessageReceived(const QString &topic, const QString &payloa
         // Topic filter: empty means any topic
         if (!script.triggerTopic.isEmpty()) {
             // Simple wildcard matching: # and +
-            QRegExp topicRx(QRegExp::escape(script.triggerTopic)
-                                .replace("\\#", ".*")
-                                .replace("\\+", "[^/]+"));
-            if (!topicRx.exactMatch(topic))
+            QRegularExpression topicRx(
+                "^" + QRegularExpression::escape(script.triggerTopic)
+                          .replace("\\#", ".*")
+                          .replace("\\+", "[^/]+") + "$");
+            if (!topicRx.match(topic).hasMatch())
                 continue;
         }
 
@@ -103,8 +104,8 @@ bool ScriptEngine::matchesCondition(const ScriptConfig &script,
     if (cond == "endsWith")
         return payload.endsWith(value);
     if (cond == "regex") {
-        QRegExp rx(value);
-        return rx.indexIn(payload) != -1;
+        QRegularExpression rx(value);
+        return rx.match(payload).hasMatch();
     }
     return false;
 }

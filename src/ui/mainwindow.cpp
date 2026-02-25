@@ -252,7 +252,7 @@ void MainWindow::setupMenuBar()
     QAction *actAbout = helpMenu->addAction("About");
     connect(actAbout, &QAction::triggered, [this]() {
         QMessageBox::about(this, "About MQTT Assistant",
-            "<b>MQTT Assistant</b><br>A Qt5 MQTT client application.<br><br>"
+            "<b>MQTT Assistant</b><br>A Qt6 MQTT client application.<br><br>"
             "Built with Qt " QT_VERSION_STR);
     });
 }

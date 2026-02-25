@@ -1,7 +1,7 @@
 QT += core gui widgets sql network mqtt
 TARGET = MQTT_assistant
 TEMPLATE = app
-CONFIG += c++11
+CONFIG += c++17
 
 SOURCES += \
     main.cpp \
