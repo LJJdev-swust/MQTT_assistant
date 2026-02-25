@@ -22,7 +22,7 @@ ChatWidget::ChatWidget(QWidget *parent)
 
     m_messagesContainer = new QWidget();
     m_messagesContainer->setObjectName("messagesContainer");
-    m_messagesContainer->setStyleSheet("background-color: #1e1e2e;");
+    m_messagesContainer->setStyleSheet("background-color: #f5f5f5;");
 
     m_messagesLayout = new QVBoxLayout(m_messagesContainer);
     m_messagesLayout->setContentsMargins(4, 4, 4, 4);
@@ -44,16 +44,16 @@ ChatWidget::ChatWidget(QWidget *parent)
     // Topic row
     QHBoxLayout *topicRow = new QHBoxLayout();
     topicRow->setSpacing(6);
-    QLabel *topicLabel = new QLabel("Topic:", inputArea);
+    QLabel *topicLabel = new QLabel("主题:", inputArea);
     topicLabel->setFixedWidth(46);
     m_topicCombo = new QComboBox(inputArea);
     m_topicCombo->setEditable(true);
     m_topicCombo->setInsertPolicy(QComboBox::InsertAtTop);
     m_topicCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_topicCombo->lineEdit()->setPlaceholderText("Enter topic...");
+    m_topicCombo->lineEdit()->setPlaceholderText("输入主题...");
 
-    m_subscribeBtn = new QPushButton("Subscribe", inputArea);
-    m_subscribeBtn->setFixedWidth(90);
+    m_subscribeBtn = new QPushButton("订阅", inputArea);
+    m_subscribeBtn->setFixedWidth(70);
 
     topicRow->addWidget(topicLabel);
     topicRow->addWidget(m_topicCombo);
@@ -63,9 +63,9 @@ ChatWidget::ChatWidget(QWidget *parent)
     QHBoxLayout *payloadRow = new QHBoxLayout();
     payloadRow->setSpacing(6);
     m_payloadEdit = new QTextEdit(inputArea);
-    m_payloadEdit->setPlaceholderText("Enter payload...");
+    m_payloadEdit->setPlaceholderText("输入消息内容...");
     m_payloadEdit->setMaximumHeight(60);
-    m_sendBtn = new QPushButton("Send", inputArea);
+    m_sendBtn = new QPushButton("发送", inputArea);
     m_sendBtn->setFixedSize(70, 60);
 
     payloadRow->addWidget(m_payloadEdit);

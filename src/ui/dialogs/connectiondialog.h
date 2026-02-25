@@ -7,6 +7,7 @@
 #include <QCheckBox>
 #include <QPushButton>
 #include <QGroupBox>
+#include <QComboBox>
 #include "core/models.h"
 
 class ConnectionDialog : public QDialog
@@ -23,11 +24,13 @@ private slots:
     void browseCaCert();
     void browseClientCert();
     void browseClientKey();
+    void onSchemeChanged(int index);
 
 private:
     void setupUi();
     void populateFrom(const MqttConnectionConfig &config);
 
+    QComboBox  *m_schemeCombo;
     QLineEdit  *m_nameEdit;
     QLineEdit  *m_hostEdit;
     QSpinBox   *m_portSpin;

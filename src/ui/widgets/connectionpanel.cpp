@@ -85,7 +85,7 @@ void ConnectionPanel::updateItemDisplay(QListWidgetItem *item, int connectionId,
     QString dot = connected ? QString::fromUtf8("\u25CF") : QString::fromUtf8("\u25CB");
     item->setText(dot + " " + name);
     item->setForeground(connected ? QColor("#4caf50") : QColor("#a0a0b0"));
-    item->setToolTip(connected ? "Connected" : "Disconnected");
+    item->setToolTip(connected ? "已连接" : "未连接");
 }
 
 QListWidgetItem *ConnectionPanel::findItem(int connectionId) const
@@ -116,11 +116,11 @@ void ConnectionPanel::onContextMenu(const QPoint &pos)
     bool connected = m_connectedState.value(id, false);
 
     QMenu menu(this);
-    QAction *actConnect    = menu.addAction("Connect");
-    QAction *actDisconnect = menu.addAction("Disconnect");
+    QAction *actConnect    = menu.addAction("连接");
+    QAction *actDisconnect = menu.addAction("断开连接");
     menu.addSeparator();
-    QAction *actEdit   = menu.addAction("Edit");
-    QAction *actDelete = menu.addAction("Delete");
+    QAction *actEdit   = menu.addAction("编辑");
+    QAction *actDelete = menu.addAction("删除");
 
     actConnect->setEnabled(!connected);
     actDisconnect->setEnabled(connected);
