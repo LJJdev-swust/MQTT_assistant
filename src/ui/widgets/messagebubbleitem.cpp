@@ -4,6 +4,11 @@
 #include <QFontMetrics>
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QMenu>
+#include <QAction>
+#include <QClipboard>
+#include <QApplication>
+#include <QContextMenuEvent>
 
 // Returns a display-friendly representation of a raw payload string.
 static QString formatPayload(const QString &payload)
@@ -35,6 +40,7 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
 {
     m_bgColor = m_outgoing ? QColor("#ea5413") : QColor("#ffffff");
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    setContextMenuPolicy(Qt::DefaultContextMenu);
 
     QVBoxLayout *outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(8, 4, 8, 4);
@@ -118,4 +124,25 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
     ).arg(m_bgColor.name(),
           m_outgoing ? m_bgColor.name() : "#dddddd");
     bubbleWidget->setStyleSheet(bubbleStyle);
+
+    // Build copy text: topic + payload + timestamp
+    m_copyText = QString("[%1] %2\n%3")
+        .arg(msg.timestamp.toString("yyyy-MM-dd hh:mm:ss"))
+        .arg(msg.topic)
+        .arg(msg.payload);
+}
+
+void MessageBubbleItem::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu menu(this);
+    QAction *actCopy = menu.addAction("复制");
+    QAction *actCopyTopic = menu.addAction("复制主题");
+    QAction *actCopyPayload = menu.addAction("复制内容");
+    QAction *chosen = menu.exec(event->globalPos());
+    if (chosen == actCopy)
+        QApplication::clipboard()->setText(m_copyText);
+    else if (chosen == actCopyTopic)
+        QApplication::clipboard()->setText(m_msg.topic);
+    else if (chosen == actCopyPayload)
+        QApplication::clipboard()->setText(m_msg.payload);
 }

@@ -4,8 +4,14 @@
 #include <QAction>
 #include <QPainter>
 
+const char *ConnectionPanel::kSpinnerFrames[] = {
+    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
+};
+const int ConnectionPanel::kSpinnerFrameCount = 10;
+
 ConnectionPanel::ConnectionPanel(QWidget *parent)
     : QWidget(parent)
+    , m_spinnerTimer(new QTimer(this))
 {
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -26,11 +32,20 @@ ConnectionPanel::ConnectionPanel(QWidget *parent)
                 if (cur)
                     emit selectionChanged(cur->data(Qt::UserRole).toInt());
             });
+
+    m_spinnerTimer->setInterval(100);
+    connect(m_spinnerTimer, &QTimer::timeout, this, &ConnectionPanel::onSpinnerTick);
+}
+
+ConnectionPanel::~ConnectionPanel()
+{
 }
 
 void ConnectionPanel::addConnection(const MqttConnectionConfig &config, bool connected)
 {
     m_connectedState[config.id] = connected;
+    m_loadingState[config.id]   = false;
+    m_spinnerFrame[config.id]   = 0;
     QListWidgetItem *item = new QListWidgetItem(m_listWidget);
     item->setData(Qt::UserRole,     config.id);
     item->setData(Qt::UserRole + 1, config.name); // store name separately
@@ -53,12 +68,20 @@ void ConnectionPanel::removeConnection(int id)
     if (item) {
         delete m_listWidget->takeItem(m_listWidget->row(item));
         m_connectedState.remove(id);
+        m_loadingState.remove(id);
+        m_spinnerFrame.remove(id);
+        if (!hasAnyLoading())
+            m_spinnerTimer->stop();
     }
 }
 
 void ConnectionPanel::setConnected(int id, bool connected)
 {
     m_connectedState[id] = connected;
+    m_loadingState[id]   = false;
+    if (!hasAnyLoading())
+        m_spinnerTimer->stop();
+
     QListWidgetItem *item = findItem(id);
     if (item) {
         QString name = item->data(Qt::UserRole + 1).toString();
@@ -66,10 +89,31 @@ void ConnectionPanel::setConnected(int id, bool connected)
     }
 }
 
+void ConnectionPanel::setLoading(int id, bool loading)
+{
+    m_loadingState[id] = loading;
+    m_spinnerFrame[id] = 0;
+    if (loading) {
+        if (!m_spinnerTimer->isActive())
+            m_spinnerTimer->start();
+    } else {
+        if (!hasAnyLoading())
+            m_spinnerTimer->stop();
+        QListWidgetItem *item = findItem(id);
+        if (item) {
+            QString name = item->data(Qt::UserRole + 1).toString();
+            updateItemDisplay(item, id, name);
+        }
+    }
+}
+
 void ConnectionPanel::clearConnections()
 {
     m_listWidget->clear();
     m_connectedState.clear();
+    m_loadingState.clear();
+    m_spinnerFrame.clear();
+    m_spinnerTimer->stop();
 }
 
 int ConnectionPanel::selectedConnectionId() const
@@ -81,11 +125,38 @@ int ConnectionPanel::selectedConnectionId() const
 void ConnectionPanel::updateItemDisplay(QListWidgetItem *item, int connectionId, const QString &name)
 {
     bool connected = m_connectedState.value(connectionId, false);
-    // Use unicode circle as status dot
-    QString dot = connected ? QString::fromUtf8("\u25CF") : QString::fromUtf8("\u25CB");
-    item->setText(dot + " " + name);
-    item->setForeground(connected ? QColor("#4caf50") : QColor("#a0a0b0"));
-    item->setToolTip(connected ? "已连接" : "未连接");
+    bool loading   = m_loadingState.value(connectionId, false);
+
+    QString prefix;
+    QColor color;
+    if (loading) {
+        int frame = m_spinnerFrame.value(connectionId, 0);
+        prefix = QString::fromUtf8(kSpinnerFrames[frame % kSpinnerFrameCount]) + " ";
+        color  = QColor("#f39800");
+    } else if (connected) {
+        prefix = QString::fromUtf8("\u25CF") + " "; // ●
+        color  = QColor("#4caf50");
+    } else {
+        prefix = QString::fromUtf8("\u25CB") + " "; // ○
+        color  = QColor("#a0a0b0");
+    }
+    item->setText(prefix + name);
+    item->setForeground(color);
+    item->setToolTip(loading ? "连接中..." : (connected ? "已连接" : "未连接"));
+}
+
+void ConnectionPanel::onSpinnerTick()
+{
+    for (auto it = m_loadingState.begin(); it != m_loadingState.end(); ++it) {
+        if (!it.value()) continue;
+        int id = it.key();
+        m_spinnerFrame[id] = (m_spinnerFrame.value(id, 0) + 1) % kSpinnerFrameCount;
+        QListWidgetItem *item = findItem(id);
+        if (item) {
+            QString name = item->data(Qt::UserRole + 1).toString();
+            updateItemDisplay(item, id, name);
+        }
+    }
 }
 
 QListWidgetItem *ConnectionPanel::findItem(int connectionId) const
@@ -96,6 +167,13 @@ QListWidgetItem *ConnectionPanel::findItem(int connectionId) const
             return item;
     }
     return nullptr;
+}
+
+bool ConnectionPanel::hasAnyLoading() const
+{
+    for (bool v : m_loadingState)
+        if (v) return true;
+    return false;
 }
 
 void ConnectionPanel::onItemDoubleClicked(QListWidgetItem *item)

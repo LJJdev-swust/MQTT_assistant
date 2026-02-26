@@ -4,6 +4,7 @@
 #include <QHBoxLayout>
 #include <QDialogButtonBox>
 #include <QLabel>
+#include <QMessageBox>
 
 CommandDialog::CommandDialog(QWidget *parent)
     : QDialog(parent)
@@ -41,7 +42,7 @@ void CommandDialog::setupUi()
     form->addRow("主题:", m_topicEdit);
 
     m_payloadEdit = new QTextEdit(this);
-    m_payloadEdit->setPlaceholderText("消息内容...");
+    m_payloadEdit->setPlaceholderText("消息内容... 支持 {{timestamp}}(ISO格式) {{topic}}");
     m_payloadEdit->setMaximumHeight(80);
     form->addRow("消息:", m_payloadEdit);
 
@@ -77,7 +78,15 @@ void CommandDialog::setupUi()
     bbox->button(QDialogButtonBox::Cancel)->setText("取消");
     mainLayout->addWidget(bbox);
 
-    connect(bbox,        &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(bbox,        &QDialogButtonBox::accepted, this, [this]() {
+        // Validate publish topic: '#' is not allowed
+        if (m_topicEdit->text().contains('#')) {
+            QMessageBox::warning(this, "主题格式错误",
+                "发布主题不能包含通配符 '#'，请修正后重试。");
+            return;
+        }
+        accept();
+    });
     connect(bbox,        &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_loopCheck, &QCheckBox::toggled,         this, &CommandDialog::onLoopChecked);
 }

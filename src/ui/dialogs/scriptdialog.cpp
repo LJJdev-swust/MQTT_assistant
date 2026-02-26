@@ -3,6 +3,7 @@
 #include <QVBoxLayout>
 #include <QDialogButtonBox>
 #include <QLabel>
+#include <QMessageBox>
 
 ScriptDialog::ScriptDialog(QWidget *parent)
     : QDialog(parent)
@@ -90,7 +91,15 @@ void ScriptDialog::setupUi()
     bbox->button(QDialogButtonBox::Cancel)->setText("取消");
     mainLayout->addWidget(bbox);
 
-    connect(bbox,             &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(bbox,             &QDialogButtonBox::accepted, this, [this]() {
+        // Validate response topic: '#' is not allowed in publish topics
+        if (m_responseTopicEdit->text().contains('#')) {
+            QMessageBox::warning(this, "主题格式错误",
+                "响应主题（发布主题）不能包含通配符 '#'，请修正后重试。");
+            return;
+        }
+        accept();
+    });
     connect(bbox,             &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(m_conditionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ScriptDialog::onConditionChanged);
