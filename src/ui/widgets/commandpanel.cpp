@@ -4,6 +4,7 @@
 #include <QMenu>
 #include <QAction>
 #include <QMessageBox>
+#include <QDateTime>
 
 CommandPanel::CommandPanel(QWidget *parent)
     : QWidget(parent)
@@ -110,7 +111,13 @@ void CommandPanel::sendCommand(int commandId)
     }
     if (!m_commands.contains(commandId)) return;
     const CommandConfig &cmd = m_commands[commandId];
-    m_client->publish(cmd.topic, cmd.payload, cmd.qos, cmd.retain);
+
+    // Substitute variables in payload: {{timestamp}}, {{topic}}
+    QString payload = cmd.payload;
+    payload.replace("{{timestamp}}", QDateTime::currentDateTime().toString(Qt::ISODate));
+    payload.replace("{{topic}}", cmd.topic);
+
+    m_client->publish(cmd.topic, payload, cmd.qos, cmd.retain);
 }
 
 void CommandPanel::startLoop(int commandId)

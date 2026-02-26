@@ -22,6 +22,10 @@
 #include <QFileDialog>
 #include <QSettings>
 #include <QCoreApplication>
+#include <QPixmap>
+#include <QDialog>
+#include <QTextEdit>
+#include <QDialogButtonBox>
 
 // ──────────────────────────────────────────────
 //  Construction
@@ -30,6 +34,7 @@
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_activeConnectionId(-1)
+    , m_titleLabel(nullptr)
     , m_toastLabel(nullptr)
     , m_toastTimer(nullptr)
 {
@@ -99,6 +104,11 @@ void MainWindow::setupUi()
     m_statusLabel = new QLabel("未连接", this);
     statusBar()->addWidget(m_statusLabel);
 
+    // Designer credit on the right side of the status bar (requirement 4)
+    QLabel *designerLabel = new QLabel("Designed by LJJ&YYJ", this);
+    designerLabel->setStyleSheet("color: #999999; font-size: 11px; padding-right: 4px;");
+    statusBar()->addPermanentWidget(designerLabel);
+
     // Toast overlay
     m_toastLabel = new QLabel(this);
     m_toastLabel->setObjectName("toastLabel");
@@ -117,11 +127,35 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     layout->setContentsMargins(8, 10, 8, 10);
     layout->setSpacing(6);
 
-    // App title
-    QLabel *titleLabel = new QLabel("MQTT 助手", sidebar);
-    titleLabel->setObjectName("labelAppTitle");
-    titleLabel->setAlignment(Qt::AlignCenter);
-    layout->addWidget(titleLabel);
+    // App title: image from configured path, or fallback text
+    m_titleLabel = new QLabel(sidebar);
+    m_titleLabel->setObjectName("labelAppTitle");
+    m_titleLabel->setAlignment(Qt::AlignCenter);
+    m_titleLabel->setFixedHeight(48);
+    m_titleLabel->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_titleLabel, &QLabel::customContextMenuRequested,
+            [this](const QPoint &pos) {
+                QMenu menu(m_titleLabel);
+                QAction *actSetImage = menu.addAction("设置标题图片...");
+                QAction *actClearImage = menu.addAction("恢复默认文字");
+                QAction *chosen = menu.exec(m_titleLabel->mapToGlobal(pos));
+                if (chosen == actSetImage) {
+                    QString path = QFileDialog::getOpenFileName(
+                        this, "选择标题图片", QString(),
+                        "图片文件 (*.png *.jpg *.jpeg *.bmp *.svg)");
+                    if (!path.isEmpty()) {
+                        QSettings settings("MQTTAssistant", "MQTT_assistant");
+                        settings.setValue("ui/titleImagePath", path);
+                        updateSidebarTitle();
+                    }
+                } else if (chosen == actClearImage) {
+                    QSettings settings("MQTTAssistant", "MQTT_assistant");
+                    settings.remove("ui/titleImagePath");
+                    updateSidebarTitle();
+                }
+            });
+    updateSidebarTitle();
+    layout->addWidget(m_titleLabel);
 
     // Separator
     QFrame *sep = new QFrame(sidebar);
@@ -268,6 +302,8 @@ void MainWindow::setupContentArea(QWidget *content)
             this, &MainWindow::onSendRequested);
     connect(m_chatWidget, &ChatWidget::subscribeRequested,
             this, &MainWindow::onSubscribeRequested);
+    connect(m_chatWidget, &ChatWidget::clearHistoryRequested,
+            this, &MainWindow::onClearHistoryRequested);
 
     // Monitor tab
     QWidget *monitorWidget = new QWidget(content);
@@ -288,6 +324,10 @@ void MainWindow::setupContentArea(QWidget *content)
     m_monitorTable->setAlternatingRowColors(false);
     m_monitorTable->verticalHeader()->setVisible(false);
     monitorLayout->addWidget(m_monitorTable);
+
+    // Double-click to view full content (requirement 8)
+    connect(m_monitorTable, &QTableWidget::cellDoubleClicked,
+            this, &MainWindow::onMonitorRowDoubleClicked);
 
     m_tabWidget->addTab(monitorWidget, "监控");
 
@@ -500,10 +540,14 @@ void MainWindow::onConnectRequested(int connectionId)
                         saveAndDisplayMessage(topic, payload, false, connectionId);
                 });
         connect(client, &MqttClient::errorOccurred, this,
-                [this](const QString &msg) {
+                [this, connectionId](const QString &msg) {
+                    m_connectionPanel->setLoading(connectionId, false);
                     showToast("错误：" + msg, 4000);
                 });
     }
+
+    // Show loading indicator while connecting (requirement 9)
+    m_connectionPanel->setLoading(connectionId, true);
 
     MqttClient *client = m_clients[connectionId];
     client->connectToHost(config);
@@ -844,3 +888,79 @@ ScriptConfig MainWindow::scriptConfigForId(int scriptId) const
 {
     return m_scripts.value(scriptId, ScriptConfig());
 }
+
+// ──────────────────────────────────────────────
+//  Clear History Slot (Requirement 1)
+// ──────────────────────────────────────────────
+
+void MainWindow::onClearHistoryRequested(int connectionId)
+{
+    if (connectionId >= 0)
+        m_db.deleteMessages(connectionId);
+    showToast("聊天记录已清除");
+}
+
+// ──────────────────────────────────────────────
+//  Monitor Row Double-Click (Requirement 8)
+// ──────────────────────────────────────────────
+
+void MainWindow::onMonitorRowDoubleClicked(int row, int /*col*/)
+{
+    if (row < 0 || row >= m_monitorTable->rowCount()) return;
+
+    QString time    = m_monitorTable->item(row, 0) ? m_monitorTable->item(row, 0)->text() : QString();
+    QString dir     = m_monitorTable->item(row, 1) ? m_monitorTable->item(row, 1)->text() : QString();
+    QString topic   = m_monitorTable->item(row, 2) ? m_monitorTable->item(row, 2)->text() : QString();
+    QString payload = m_monitorTable->item(row, 3) ? m_monitorTable->item(row, 3)->text() : QString();
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("消息详情");
+    dlg.setMinimumSize(480, 320);
+    QVBoxLayout *layout = new QVBoxLayout(&dlg);
+
+    QLabel *infoLabel = new QLabel(
+        QString("<b>时间:</b> %1 &nbsp;&nbsp; <b>方向:</b> %2 &nbsp;&nbsp; <b>主题:</b> %3")
+            .arg(time.toHtmlEscaped(), dir.toHtmlEscaped(), topic.toHtmlEscaped()),
+        &dlg);
+    infoLabel->setWordWrap(true);
+    layout->addWidget(infoLabel);
+
+    QTextEdit *contentEdit = new QTextEdit(&dlg);
+    contentEdit->setPlainText(payload);
+    contentEdit->setReadOnly(true);
+    layout->addWidget(contentEdit);
+
+    QDialogButtonBox *bbox = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+    bbox->button(QDialogButtonBox::Close)->setText("关闭");
+    connect(bbox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    layout->addWidget(bbox);
+
+    dlg.exec();
+}
+
+// ──────────────────────────────────────────────
+//  Sidebar Title (Requirement 6)
+// ──────────────────────────────────────────────
+
+void MainWindow::updateSidebarTitle()
+{
+    if (!m_titleLabel) return;
+    QSettings settings("MQTTAssistant", "MQTT_assistant");
+    QString imagePath = settings.value("ui/titleImagePath").toString();
+    if (!imagePath.isEmpty()) {
+        QPixmap pm(imagePath);
+        if (!pm.isNull()) {
+            // Sidebar is 240px wide; label occupies full width minus margins
+            static const int kTitleW = 224;
+            static const int kTitleH = 48;
+            m_titleLabel->setPixmap(pm.scaled(kTitleW, kTitleH, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            m_titleLabel->setToolTip("右键点击可更改标题图片");
+            return;
+        }
+    }
+    // Fallback to text
+    m_titleLabel->setPixmap(QPixmap());
+    m_titleLabel->setText("MQTT 助手");
+    m_titleLabel->setToolTip("右键点击可设置标题图片");
+}
+

@@ -298,9 +298,24 @@ QCheckBox::indicator {
 QCheckBox::indicator:checked {
     background-color: #ea5413;
     border-color: #ea5413;
+    image: url(:/icons/check.svg);
 }
 QCheckBox::indicator:hover {
     border-color: #ea5413;
+}
+
+/* ---------- List Widget Checkbox Items ---------- */
+QListWidget::indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 2px solid #cccccc;
+    background-color: #ffffff;
+}
+QListWidget::indicator:checked {
+    background-color: #ea5413;
+    border-color: #ea5413;
+    image: url(:/icons/check.svg);
 }
 
 /* ---------- Scroll Bar ---------- */
@@ -386,6 +401,25 @@ QWidget#sidebarWidget {
 }
 
 /* ---------- Chat area ---------- */
+QWidget#chatHeaderBar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #eeeeee;
+}
+QPushButton#btnClearChat {
+    background-color: #f5f5f5;
+    color: #666666;
+    border: 1px solid #d0d0d0;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 400;
+    min-height: 20px;
+}
+QPushButton#btnClearChat:hover {
+    background-color: #ffe0d4;
+    color: #ea5413;
+    border-color: #ea5413;
+}
 QWidget#chatInputArea {
     background-color: #ffffff;
     border-top: 1px solid #d0d0d0;
@@ -404,6 +438,20 @@ QLabel#toastLabel {
 /* ---------- Splitter ---------- */
 QSplitter::handle {
     background-color: #d0d0d0;
-    width: 1px;
-    height: 1px;
+}
+QSplitter::handle:vertical {
+    height: 5px;
+    background-color: #d0d0d0;
+    border-top: 1px solid #c0c0c0;
+    border-bottom: 1px solid #c0c0c0;
+}
+QSplitter::handle:vertical:hover {
+    background-color: #ea5413;
+}
+QSplitter::handle:horizontal {
+    width: 5px;
+    background-color: #d0d0d0;
+}
+QSplitter::handle:horizontal:hover {
+    background-color: #ea5413;
 }

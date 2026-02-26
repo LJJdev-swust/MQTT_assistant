@@ -56,6 +56,10 @@ private slots:
     // Chat widget slots
     void onSendRequested(const QString &topic, const QString &payload);
     void onSubscribeRequested(const QString &topic);
+    void onClearHistoryRequested(int connectionId);
+
+    // Monitor table
+    void onMonitorRowDoubleClicked(int row, int col);
 
 private:
     void setupUi();
@@ -69,6 +73,7 @@ private:
                                bool outgoing, int connectionId);
     void showToast(const QString &message, int durationMs = 2500);
     void subscribeAllForConnection(int connectionId);
+    void updateSidebarTitle();
 
     MqttClient      *clientForId(int connectionId);
     MqttConnectionConfig configForId(int connectionId) const;
@@ -94,6 +99,7 @@ private:
     QTableWidget      *m_monitorTable;
     QTabWidget        *m_tabWidget;
     QLabel            *m_statusLabel;
+    QLabel            *m_titleLabel; // sidebar title (image or text)
 
     // Toast
     QLabel  *m_toastLabel;

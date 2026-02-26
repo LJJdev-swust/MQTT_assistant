@@ -7,6 +7,7 @@
 #include <QComboBox>
 #include <QTextEdit>
 #include <QPushButton>
+#include <QSplitter>
 #include <QList>
 #include "core/models.h"
 
@@ -25,19 +26,26 @@ public:
 
     QComboBox *topicCombo() const { return m_topicCombo; }
 
+    // Persist/restore topic history to QSettings
+    void saveTopicHistory();
+    void loadTopicHistory();
+
 signals:
     void sendRequested(const QString &topic, const QString &payload);
     void subscribeRequested(const QString &topic);
+    void clearHistoryRequested(int connectionId); // emitted when user wants DB clear
 
 private slots:
     void onSendClicked();
     void onSubscribeClicked();
+    void onClearClicked();
     void scrollToBottom();
 
 private:
     QScrollArea  *m_scrollArea;
     QWidget      *m_messagesContainer;
     QVBoxLayout  *m_messagesLayout;
+    QSplitter    *m_splitter;
 
     QComboBox    *m_topicCombo;
     QTextEdit    *m_payloadEdit;
@@ -45,6 +53,9 @@ private:
     QPushButton  *m_subscribeBtn;
 
     MqttClient   *m_client;
+    int           m_connectionId; // for DB clear
+
+    static const int kMaxTopicHistory = 10;
 };
 
 #endif // CHATWIDGET_H

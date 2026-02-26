@@ -415,8 +415,9 @@ QList<MessageRecord> DatabaseManager::loadMessages(int connectionId, int limit)
 {
     QList<MessageRecord> list;
     QSqlQuery q(m_db);
+    // Return the most-recent 'limit' messages in chronological order (oldest first)
     q.prepare("SELECT id,connection_id,topic,payload,outgoing,timestamp FROM messages "
-              "WHERE connection_id=:connid ORDER BY id ASC LIMIT :lim");
+              "WHERE connection_id=:connid ORDER BY id DESC LIMIT :lim");
     q.bindValue(":connid", connectionId);
     q.bindValue(":lim",    limit);
     if (!q.exec()) { qWarning() << q.lastError().text(); return list; }
@@ -429,7 +430,7 @@ QList<MessageRecord> DatabaseManager::loadMessages(int connectionId, int limit)
         m.payload      = q.value(3).toString();
         m.outgoing     = q.value(4).toBool();
         m.timestamp    = QDateTime::fromString(q.value(5).toString(), Qt::ISODate);
-        list.append(m);
+        list.prepend(m); // prepend to get chronological order
     }
     return list;
 }
