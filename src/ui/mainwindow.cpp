@@ -127,33 +127,11 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     layout->setContentsMargins(8, 10, 8, 10);
     layout->setSpacing(6);
 
-    // App title: image from configured path, or fallback text
+    // App title: always display image from the fixed path below
     m_titleLabel = new QLabel(sidebar);
     m_titleLabel->setObjectName("labelAppTitle");
     m_titleLabel->setAlignment(Qt::AlignCenter);
     m_titleLabel->setFixedHeight(48);
-    m_titleLabel->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(m_titleLabel, &QLabel::customContextMenuRequested,
-            [this](const QPoint &pos) {
-                QMenu menu(m_titleLabel);
-                QAction *actSetImage = menu.addAction("设置标题图片...");
-                QAction *actClearImage = menu.addAction("恢复默认文字");
-                QAction *chosen = menu.exec(m_titleLabel->mapToGlobal(pos));
-                if (chosen == actSetImage) {
-                    QString path = QFileDialog::getOpenFileName(
-                        this, "选择标题图片", QString(),
-                        "图片文件 (*.png *.jpg *.jpeg *.bmp *.svg)");
-                    if (!path.isEmpty()) {
-                        QSettings settings("MQTTAssistant", "MQTT_assistant");
-                        settings.setValue("ui/titleImagePath", path);
-                        updateSidebarTitle();
-                    }
-                } else if (chosen == actClearImage) {
-                    QSettings settings("MQTTAssistant", "MQTT_assistant");
-                    settings.remove("ui/titleImagePath");
-                    updateSidebarTitle();
-                }
-            });
     updateSidebarTitle();
     layout->addWidget(m_titleLabel);
 
@@ -330,6 +308,14 @@ void MainWindow::setupContentArea(QWidget *content)
             this, &MainWindow::onMonitorRowDoubleClicked);
 
     m_tabWidget->addTab(monitorWidget, "监控");
+
+    // Clear button in the top-right corner of the tab bar
+    QPushButton *clearBtn = new QPushButton("清除", m_tabWidget);
+    clearBtn->setObjectName("btnClearChat");
+    clearBtn->setFixedHeight(28);
+    clearBtn->setToolTip("清除聊天记录");
+    m_tabWidget->setCornerWidget(clearBtn, Qt::TopRightCorner);
+    connect(clearBtn, &QPushButton::clicked, m_chatWidget, &ChatWidget::onClearClicked);
 
     layout->addWidget(m_tabWidget);
 }
@@ -945,22 +931,17 @@ void MainWindow::onMonitorRowDoubleClicked(int row, int /*col*/)
 void MainWindow::updateSidebarTitle()
 {
     if (!m_titleLabel) return;
-    QSettings settings("MQTTAssistant", "MQTT_assistant");
-    QString imagePath = settings.value("ui/titleImagePath").toString();
-    if (!imagePath.isEmpty()) {
-        QPixmap pm(imagePath);
-        if (!pm.isNull()) {
-            // Sidebar is 240px wide; label occupies full width minus margins
-            static const int kTitleW = 224;
-            static const int kTitleH = 48;
-            m_titleLabel->setPixmap(pm.scaled(kTitleW, kTitleH, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            m_titleLabel->setToolTip("右键点击可更改标题图片");
-            return;
-        }
+    // ---- Modify the path below to change the title image ----
+    const QString kTitleImagePath = QCoreApplication::applicationDirPath() + "/logo.png";
+    // ---------------------------------------------------------
+    QPixmap pm(kTitleImagePath);
+    if (!pm.isNull()) {
+        static const int kTitleW = 224;
+        static const int kTitleH = 48;
+        m_titleLabel->setPixmap(pm.scaled(kTitleW, kTitleH, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    } else {
+        m_titleLabel->setPixmap(QPixmap());
+        m_titleLabel->setText(QString());
     }
-    // Fallback to text
-    m_titleLabel->setPixmap(QPixmap());
-    m_titleLabel->setText("MQTT 助手");
-    m_titleLabel->setToolTip("右键点击可设置标题图片");
 }
 
