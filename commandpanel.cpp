@@ -1,0 +1,174 @@
+#include "commandpanel.h"
+#include "core/mqttclient.h"
+#include <QVBoxLayout>
+#include <QMenu>
+#include <QAction>
+#include <QMessageBox>
+#include <QDateTime>
+
+CommandPanel::CommandPanel(QWidget *parent)
+    : QWidget(parent)
+    , m_client(nullptr)
+{
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    m_listWidget = new QListWidget(this);
+    m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+    layout->addWidget(m_listWidget);
+
+    connect(m_listWidget, &QListWidget::customContextMenuRequested,
+            this, &CommandPanel::onContextMenu);
+}
+
+CommandPanel::~CommandPanel()
+{
+    qDeleteAll(m_loopTimers);
+}
+
+void CommandPanel::setClient(MqttClient *client)
+{
+    m_client = client;
+}
+
+void CommandPanel::addCommand(const CommandConfig &cmd)
+{
+    m_commands[cmd.id] = cmd;
+    QListWidgetItem *item = new QListWidgetItem(cmd.name, m_listWidget);
+    item->setData(Qt::UserRole, cmd.id);
+    m_listWidget->addItem(item);
+}
+
+void CommandPanel::updateCommand(const CommandConfig &cmd)
+{
+    m_commands[cmd.id] = cmd;
+    QListWidgetItem *item = findItem(cmd.id);
+    if (item)
+        item->setText(cmd.name);
+}
+
+void CommandPanel::removeCommand(int id)
+{
+    stopLoop(id);
+    m_commands.remove(id);
+    QListWidgetItem *item = findItem(id);
+    if (item)
+        delete m_listWidget->takeItem(m_listWidget->row(item));
+}
+
+void CommandPanel::clearCommands()
+{
+    for (int id : m_loopTimers.keys())
+        stopLoop(id);
+    m_commands.clear();
+    m_listWidget->clear();
+}
+
+void CommandPanel::onContextMenu(const QPoint &pos)
+{
+    QListWidgetItem *item = m_listWidget->itemAt(pos);
+    if (!item) return;
+
+    int id = item->data(Qt::UserRole).toInt();
+    bool looping = m_loopTimers.contains(id);
+
+    QMenu menu(this);
+    QAction *actSend      = menu.addAction("发送");
+    QAction *actStartLoop = menu.addAction("开始循环");
+    QAction *actStopLoop  = menu.addAction("停止循环");
+    menu.addSeparator();
+    QAction *actEdit   = menu.addAction("编辑");
+    QAction *actDelete = menu.addAction("删除");
+
+    actStartLoop->setEnabled(!looping);
+    actStopLoop->setEnabled(looping);
+
+    QAction *chosen = menu.exec(m_listWidget->viewport()->mapToGlobal(pos));
+    if (!chosen) return;
+
+    if (chosen == actSend)      sendCommand(id);
+    if (chosen == actStartLoop) startLoop(id);
+    if (chosen == actStopLoop)  stopLoop(id);
+    if (chosen == actEdit)      emit editRequested(id);
+    if (chosen == actDelete)    emit deleteRequested(id);
+}
+
+void CommandPanel::onLoopTimer()
+{
+    QTimer *timer = qobject_cast<QTimer*>(sender());
+    if (!timer) return;
+    int id = m_loopTimers.key(timer, -1);
+    if (id != -1)
+        sendCommand(id);
+}
+
+void CommandPanel::sendCommand(int commandId)
+{
+    if (!m_client || !m_client->isConnected()) {
+        QMessageBox::warning(this, "未连接", "请先连接到 MQTT 服务器。");
+        return;
+    }
+    if (!m_commands.contains(commandId)) return;
+    const CommandConfig &cmd = m_commands[commandId];
+
+    // Substitute variables in payload
+    QString payload = cmd.payload;
+
+    // 添加三种时间戳格式
+    QDateTime now = QDateTime::currentDateTime();
+    payload.replace("{{timestamp}}", now.toString("yyyy-MM-dd hh:mm:ss"));  // 改为年月日时分秒格式
+    payload.replace("{{timestamp_iso}}", now.toString(Qt::ISODate));        // ISO格式
+    payload.replace("{{timestamp_unix}}", QString::number(now.toSecsSinceEpoch()));
+    payload.replace("{{timestamp_ms}}", QString::number(QDateTime::currentMSecsSinceEpoch()));
+    payload.replace("{{topic}}", cmd.topic);
+
+    QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
+                              Q_ARG(QString, cmd.topic), Q_ARG(QString, payload),
+                              Q_ARG(int, cmd.qos), Q_ARG(bool, cmd.retain));
+
+    // 发送信号通知命令已发送，以便添加到聊天记录
+    emit commandSent(cmd.topic, payload);
+}
+
+void CommandPanel::startLoop(int commandId)
+{
+    if (m_loopTimers.contains(commandId)) return;
+    if (!m_commands.contains(commandId)) return;
+    const CommandConfig &cmd = m_commands[commandId];
+    int interval = qMax(100, cmd.loopIntervalMs);
+
+    QTimer *timer = new QTimer(this);
+    timer->setInterval(interval);
+    connect(timer, &QTimer::timeout, this, &CommandPanel::onLoopTimer);
+    m_loopTimers[commandId] = timer;
+    timer->start();
+
+    // Update item display to indicate looping
+    QListWidgetItem *item = findItem(commandId);
+    if (item)
+        item->setText(cmd.name + " [循环中]");
+}
+
+void CommandPanel::stopLoop(int commandId)
+{
+    if (!m_loopTimers.contains(commandId)) return;
+    QTimer *timer = m_loopTimers.take(commandId);
+    timer->stop();
+    timer->deleteLater();
+
+    // Restore item display
+    QListWidgetItem *item = findItem(commandId);
+    if (item && m_commands.contains(commandId))
+        item->setText(m_commands[commandId].name);
+}
+
+QListWidgetItem *CommandPanel::findItem(int commandId) const
+{
+    for (int i = 0; i < m_listWidget->count(); ++i) {
+        QListWidgetItem *item = m_listWidget->item(i);
+        if (item->data(Qt::UserRole).toInt() == commandId)
+            return item;
+    }
+    return nullptr;
+}
