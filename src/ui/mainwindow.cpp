@@ -180,8 +180,13 @@ bool MainWindow::promptForDatabasePath()
 
 MainWindow::~MainWindow()
 {
+    // Collect thread pointers before stopClientThread() removes them from the map
+    QList<QThread*> threads = m_clientThreads.values();
     for (int id : m_clients.keys())
         stopClientThread(id);
+    // Wait for every worker thread to finish so we don't destroy a running thread
+    for (QThread *t : threads)
+        t->wait();
 }
 
 // ──────────────────────────────────────────────

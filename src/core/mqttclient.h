@@ -42,7 +42,6 @@ signals:
 private slots:
     void onConnected();
     void onDisconnected();
-    void onMessageReceived(const QByteArray &payload, const QMqttTopicName &topic);
     void onMessageReceived(const QMqttMessage &message);
     void onErrorChanged(QMqttClient::ClientError error);
 

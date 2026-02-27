@@ -28,11 +28,14 @@ bool DatabaseManager::open(const QString &dbPath)
         QDir().mkpath(QFileInfo(path).absolutePath());
     }
 
-    // 关键修复：如果已经存在同名连接，先移除它
+    // 关键修复：如果已经存在同名连接，先关闭并移除它
     QString connectionName = "mqtt_assistant_db";
     if (QSqlDatabase::contains(connectionName)) {
-        // 注意：在移除连接前，需要确保该连接的所有查询都已销毁
-        // 并且连接本身是关闭状态
+        // Close and invalidate m_db before removing so Qt doesn't warn
+        // about a connection still in use.
+        if (m_db.isOpen())
+            m_db.close();
+        m_db = QSqlDatabase();          // release the reference
         QSqlDatabase::removeDatabase(connectionName);
     }
 
