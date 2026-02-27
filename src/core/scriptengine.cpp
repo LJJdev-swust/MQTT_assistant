@@ -164,7 +164,7 @@ void ScriptEngine::triggerScript(const ScriptConfig &script,
         qDebug() << "延迟" << script.delayMs << "ms后发布消息";
         // 使用一个标志位防止多次触发（如果需要）
         QTimer::singleShot(script.delayMs, this, [this, responseTopic, responsePayload, qos, retain]() {
-if (m_client && m_client->isConnected()) {
+            if (m_client && m_client->isConnected()) {
                 QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
                                           Q_ARG(QString, responseTopic),
                                           Q_ARG(QString, responsePayload),

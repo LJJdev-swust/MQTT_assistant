@@ -277,20 +277,6 @@ void MqttClient::onDisconnected()
     emit disconnected();
 }
 
-void MqttClient::onMessageReceived(const QByteArray &payload, const QMqttTopicName &topic)
-{
-    QString text;
-
-    // Try to decode as UTF-8; if the payload has invalid bytes, show as HEX
-    auto decoder = QStringDecoder(QStringConverter::Utf8);
-    text = decoder(payload);
-    if (decoder.hasError()) {
-        text = "HEX: " + QString::fromLatin1(payload.toHex(' ')).toUpper();
-    }
-
-    emit messageReceived(topic.name(), text, false);  // 默认 retained = false
-}
-
 void MqttClient::onMessageReceived(const QMqttMessage &message)
 {
     QString text;
