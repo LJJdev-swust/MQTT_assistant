@@ -3,9 +3,11 @@
 #include <QFile>
 #include <QDir>
 #include <QStandardPaths>
+#include <QSslSocket>
 
 int main(int argc, char *argv[])
 {
+    qputenv("QT_SSL_USE_OPENSSL", "1");
     QApplication app(argc, argv);
     app.setApplicationName("MQTT Assistant");
     app.setOrganizationName("MQTTAssistant");
