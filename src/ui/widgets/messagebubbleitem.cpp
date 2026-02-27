@@ -61,8 +61,8 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
     topicFont.setBold(true);
     topicLabel->setFont(topicFont);
     topicLabel->setStyleSheet(m_outgoing
-        ? "color: #ffffff; background: transparent;"
-        : "color: #1e1e2e; background: transparent;");
+                                  ? "color: #ffffff; background: transparent;"
+                                  : "color: #1e1e2e; background: transparent;");
     topicLabel->setWordWrap(true);
 
     // Format detection
@@ -77,25 +77,25 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
     typeFont.setBold(true);
     typeLabel->setFont(typeFont);
     typeLabel->setStyleSheet(m_outgoing
-        ? "color: rgba(255,255,255,0.85); background: transparent;"
-        : "color: #f39800; background: transparent;");
+                                 ? "color: rgba(255,255,255,0.85); background: transparent;"
+                                 : "color: #f39800; background: transparent;");
 
     // Payload label
     QLabel *payloadLabel = new QLabel(displayPayload, bubbleWidget);
     payloadLabel->setWordWrap(true);
     payloadLabel->setTextFormat(Qt::PlainText);
     payloadLabel->setStyleSheet(m_outgoing
-        ? "color: #fff5f0; background: transparent;"
-        : "color: #333333; background: transparent;");
+                                    ? "color: #fff5f0; background: transparent;"
+                                    : "color: #333333; background: transparent;");
 
     // Timestamp label
-    QLabel *tsLabel = new QLabel(msg.timestamp.toString("hh:mm:ss"), bubbleWidget);
+    QLabel *tsLabel = new QLabel(msg.timestamp.toString("yyyy-MM-dd hh:mm:ss"), bubbleWidget);
     QFont tsFont = tsLabel->font();
     tsFont.setPointSize(tsFont.pointSize() - 2);
     tsLabel->setFont(tsFont);
     tsLabel->setStyleSheet(m_outgoing
-        ? "color: rgba(255,255,255,0.7); background: transparent;"
-        : "color: #888888; background: transparent;");
+                               ? "color: rgba(255,255,255,0.7); background: transparent;"
+                               : "color: #888888; background: transparent;");
     tsLabel->setAlignment(m_outgoing ? Qt::AlignRight : Qt::AlignLeft);
 
     bubbleLayout->addWidget(topicLabel);
@@ -117,20 +117,20 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
 
     // Style bubble background
     QString bubbleStyle = QString(
-        "QWidget#bubbleWidget {"
-        "  background-color: %1;"
-        "  border-radius: 12px;"
-        "  border: 1px solid %2;"
-        "}"
-    ).arg(m_bgColor.name(),
-          m_outgoing ? m_bgColor.name() : "#dddddd");
+                              "QWidget#bubbleWidget {"
+                              "  background-color: %1;"
+                              "  border-radius: 12px;"
+                              "  border: 1px solid %2;"
+                              "}"
+                              ).arg(m_bgColor.name(),
+                                   m_outgoing ? m_bgColor.name() : "#dddddd");
     bubbleWidget->setStyleSheet(bubbleStyle);
 
     // Build copy text: topic + payload + timestamp
     m_copyText = QString("[%1] %2\n%3")
-        .arg(msg.timestamp.toString("yyyy-MM-dd hh:mm:ss"))
-        .arg(msg.topic)
-        .arg(msg.payload);
+                     .arg(msg.timestamp.toString("yyyy-MM-dd hh:mm:ss"))
+                     .arg(msg.topic)
+                     .arg(msg.payload);
 }
 
 void MessageBubbleItem::contextMenuEvent(QContextMenuEvent *event)

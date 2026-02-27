@@ -6,6 +6,7 @@
 #include <QTextEdit>
 #include <QComboBox>
 #include <QSpinBox>
+#include <QPushButton>
 #include <QCheckBox>
 #include "core/models.h"
 

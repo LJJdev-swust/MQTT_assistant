@@ -5,6 +5,7 @@
 #include <QAction>
 #include <QMessageBox>
 #include <QDateTime>
+
 CommandPanel::CommandPanel(QWidget *parent)
     : QWidget(parent)
     , m_client(nullptr)
@@ -111,15 +112,23 @@ void CommandPanel::sendCommand(int commandId)
     if (!m_commands.contains(commandId)) return;
     const CommandConfig &cmd = m_commands[commandId];
 
-    // Substitute variables in payload: {{timestamp}}, {{topic}}
+    // Substitute variables in payload
     QString payload = cmd.payload;
-    payload.replace("{{timestamp}}", QDateTime::currentDateTime().toString(Qt::ISODate));
+
+    // 添加三种时间戳格式
+    QDateTime now = QDateTime::currentDateTime();
+    payload.replace("{{timestamp}}", now.toString("yyyy-MM-dd hh:mm:ss"));  // 改为年月日时分秒格式
+    payload.replace("{{timestamp_iso}}", now.toString(Qt::ISODate));        // ISO格式
+    payload.replace("{{timestamp_unix}}", QString::number(now.toSecsSinceEpoch()));
+    payload.replace("{{timestamp_ms}}", QString::number(QDateTime::currentMSecsSinceEpoch()));
     payload.replace("{{topic}}", cmd.topic);
 
-    // Use invokeMethod so the call is safe even if client is on another thread
     QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
                               Q_ARG(QString, cmd.topic), Q_ARG(QString, payload),
                               Q_ARG(int, cmd.qos), Q_ARG(bool, cmd.retain));
+
+    // 发送信号通知命令已发送，以便添加到聊天记录
+    emit commandSent(cmd.topic, payload);
 }
 
 void CommandPanel::startLoop(int commandId)

@@ -8,6 +8,7 @@
 #include <QTextEdit>
 #include <QPushButton>
 #include <QSplitter>
+#include <QLineEdit>
 #include <QList>
 #include "core/models.h"
 
@@ -34,7 +35,6 @@ signals:
     void sendRequested(const QString &topic, const QString &payload);
     void subscribeRequested(const QString &topic);
     void clearHistoryRequested(int connectionId); // emitted when user wants DB clear
-
 public slots:
     void onClearClicked();
 

@@ -39,35 +39,143 @@ MainWindow::MainWindow(QWidget *parent)
     , m_toastLabel(nullptr)
     , m_toastTimer(nullptr)
 {
-    // Register custom types for cross-thread signal/slot delivery
     qRegisterMetaType<MqttConnectionConfig>("MqttConnectionConfig");
 
     setWindowTitle("MQTT 助手");
     setMinimumSize(960, 640);
     resize(1200, 780);
-
-    // Determine the database directory, prompting the user on first run or if unset
-    QSettings settings("MQTTAssistant", "MQTT_assistant");
-    QString dbDir = settings.value("database/directory").toString();
-    if (dbDir.isEmpty()) {
-        QString defaultDir = QCoreApplication::applicationDirPath();
-        dbDir = QFileDialog::getExistingDirectory(
-            nullptr,
-            "选择数据库存储路径",
-            defaultDir,
-            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
-        );
-        if (dbDir.isEmpty())
-            dbDir = defaultDir;
-        settings.setValue("database/directory", dbDir);
-    }
-
-    if (!m_db.open(dbDir + "/mqtt_assistant.db"))
-        QMessageBox::critical(this, "数据库错误", "无法打开数据库，请检查存储权限。");
-
     setupMenuBar();
     setupUi();
+
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (screen) {
+        QRect screenGeometry = screen->availableGeometry();
+        int x = (screenGeometry.width() - width()) / 2;
+        int y = (screenGeometry.height() - height()) / 2;
+        move(x, y);
+    }
+
+
+    // 初始化数据库（关键修改）
+    if (!initializeDatabase()) {
+        // 如果用户取消或失败，显示错误并退出
+        QMessageBox::critical(this, "错误",
+                              "无法初始化数据库，程序将退出。\n"
+                              "请确保有足够的权限或在下次启动时选择有效路径。");
+        QTimer::singleShot(0, this, &QMainWindow::close);
+        return;
+    }
     loadAllData();
+}
+
+bool MainWindow::initializeDatabase()
+{
+    // 1. 首先检查是否有上次保存的路径
+    QSettings settings("MQTTAssistant", "MQTT_assistant");
+    QString lastPath = settings.value("databasePath").toString();
+
+    // 2. 如果上次路径存在且文件存在，直接使用
+    if (!lastPath.isEmpty() && QFile::exists(lastPath)) {
+        if (m_db.open(lastPath)) {
+            qDebug() << "使用上次的数据库路径：" << lastPath;
+            return true;
+        } else {
+            // 上次路径存在但无法打开（可能已损坏）
+            QMessageBox::warning(this, "警告",
+                                 "上次使用的数据库文件存在但无法打开，可能已损坏。\n"
+                                 "请选择新的存储位置或修复文件。");
+        }
+    }
+
+    // 3. 如果上次路径不存在或文件不存在，引导用户选择
+    return promptForDatabasePath();
+}
+
+bool MainWindow::promptForDatabasePath()
+{
+    while (true) {
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle("选择数据库存储位置");
+        msgBox.setText("未找到有效的数据库文件。");
+        msgBox.setInformativeText("请选择数据存储方式：");
+
+        QPushButton *useDefaultBtn = msgBox.addButton("使用默认位置", QMessageBox::AcceptRole);
+        QPushButton *choosePathBtn = msgBox.addButton("选择存储位置", QMessageBox::ActionRole);
+        QPushButton *exitBtn = msgBox.addButton("退出程序", QMessageBox::RejectRole);
+
+        msgBox.setDefaultButton(useDefaultBtn);
+        msgBox.exec();
+
+        QAbstractButton *clicked = msgBox.clickedButton();
+        QString selectedPath;
+
+        if (clicked == useDefaultBtn) {
+            // 使用 exe 所在目录作为默认位置
+            selectedPath = QCoreApplication::applicationDirPath() + "/mqtt_assistant.db";
+            qDebug() << "选择默认路径：" << selectedPath;
+        }
+        else if (clicked == choosePathBtn) {
+            // 让用户选择路径
+            selectedPath = QFileDialog::getSaveFileName(
+                this,
+                "选择或创建数据库文件",
+                QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/mqtt_assistant.db",
+                "SQLite Database (*.db);;All Files (*)"
+                );
+
+            if (selectedPath.isEmpty()) {
+                // 用户取消了文件选择对话框，继续循环
+                continue;
+            }
+
+            // 确保文件扩展名是 .db
+            if (!selectedPath.endsWith(".db", Qt::CaseInsensitive)) {
+                selectedPath += ".db";
+            }
+        }
+        else if (clicked == exitBtn) {
+            // 用户选择退出
+            qDebug() << "用户选择退出程序";
+            return false;
+        }
+        else {
+            // 用户关闭了对话框（如点击右上角X）
+            qDebug() << "用户关闭对话框";
+            return false;
+        }
+
+        // 确保目录存在
+        QFileInfo fileInfo(selectedPath);
+        QDir dir(fileInfo.path());
+        if (!dir.exists()) {
+            if (!dir.mkpath(".")) {
+                QMessageBox::warning(this, "错误", "无法创建目录：" + dir.path());
+                continue;
+            }
+        }
+
+        // 尝试打开/创建数据库
+        if (m_db.open(selectedPath)) {
+            // 保存成功路径到设置
+            saveDatabasePathToSettings(selectedPath);
+
+            // 使用 QMessageBox 替代 showToast
+            QMessageBox::information(this, "成功",
+                                     "数据库已创建/打开：" + QFileInfo(selectedPath).fileName());
+
+            return true;
+        } else {
+            // 打开失败，提示用户
+            QString errorMsg = QString("无法在指定位置创建/打开数据库。\n"
+                                       "请检查路径是否可写或选择其他位置。\n\n"
+                                       "错误信息：%1")
+                                   .arg(m_db.lastError());
+            QMessageBox::warning(this, "错误", errorMsg);
+            // 继续循环，让用户重新选择
+        }
+    }
+
+    return false;
 }
 
 MainWindow::~MainWindow()
@@ -128,11 +236,12 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     layout->setContentsMargins(8, 10, 8, 10);
     layout->setSpacing(6);
 
-    // App title: always display image from the fixed path below
+    // App title
     m_titleLabel = new QLabel(sidebar);
     m_titleLabel->setObjectName("labelAppTitle");
     m_titleLabel->setAlignment(Qt::AlignCenter);
     m_titleLabel->setFixedHeight(48);
+
     updateSidebarTitle();
     layout->addWidget(m_titleLabel);
 
@@ -148,6 +257,7 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     m_commandPanel = new CommandPanel();
 
     m_scriptList = new QListWidget();
+
     m_scriptList->setContextMenuPolicy(Qt::CustomContextMenu);
     m_scriptList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
@@ -212,6 +322,10 @@ void MainWindow::setupSidebar(QWidget *sidebar)
             this, &MainWindow::onAddSubscription);
     connect(m_subscriptionPanel, &SubscriptionPanel::unsubscribeRequested,
             this, &MainWindow::onUnsubscribeRequested);
+    connect(m_subscriptionPanel, &SubscriptionPanel::copyTopicRequested,
+            [this](const QString &topic) {
+                showToast("主题已复制到剪贴板: " + topic);
+            });
 
     connect(m_commandPanel, &CommandPanel::editRequested,
             this, &MainWindow::onEditCommand);
@@ -219,6 +333,12 @@ void MainWindow::setupSidebar(QWidget *sidebar)
             this, &MainWindow::onDeleteCommand);
     connect(m_commandPanel, &CommandPanel::addRequested,
             this, &MainWindow::onAddCommand);
+    connect(m_commandPanel, &CommandPanel::commandSent,
+            this, [this](const QString &topic, const QString &payload) {
+                if (m_activeConnectionId >= 0) {
+                    saveAndDisplayMessage(topic, payload, true, m_activeConnectionId);
+                }
+            });
 
     connect(m_scriptList, &QListWidget::customContextMenuRequested,
             [this](const QPoint &pos) {
@@ -267,7 +387,7 @@ void MainWindow::setupContentArea(QWidget *content)
     m_monitorTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     m_monitorTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     m_monitorTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Interactive);
-    m_monitorTable->setColumnWidth(0, 85);
+    m_monitorTable->setColumnWidth(0, 150);
     m_monitorTable->setColumnWidth(1, 75);
     m_monitorTable->setColumnWidth(2, 200);
     m_monitorTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -276,17 +396,15 @@ void MainWindow::setupContentArea(QWidget *content)
     m_monitorTable->verticalHeader()->setVisible(false);
     monitorLayout->addWidget(m_monitorTable);
 
-    // Double-click to view full content (requirement 8)
     connect(m_monitorTable, &QTableWidget::cellDoubleClicked,
             this, &MainWindow::onMonitorRowDoubleClicked);
 
     m_tabWidget->addTab(monitorWidget, "监控");
 
-    // Clear button in the top-right corner of the tab bar
     QPushButton *clearBtn = new QPushButton("清除", m_tabWidget);
-    clearBtn->setObjectName("btnClearChat");
-    clearBtn->setFixedHeight(28);
+    clearBtn->setObjectName("btnClearChat");  // 这个对象名很重要，匹配QSS
     clearBtn->setToolTip("清除聊天记录");
+
     m_tabWidget->setCornerWidget(clearBtn, Qt::TopRightCorner);
     connect(clearBtn, &QPushButton::clicked, m_chatWidget, &ChatWidget::onClearClicked);
 
@@ -348,22 +466,32 @@ void MainWindow::resizeEvent(QResizeEvent *event)
 
 void MainWindow::loadAllData()
 {
+    qDebug() << "loadAllData: 开始加载连接";
     // Connections
     QList<MqttConnectionConfig> conns = m_db.loadConnections();
+    qDebug() << "loadAllData: 加载到" << conns.size() << "个连接";
     for (const MqttConnectionConfig &c : conns) {
         m_connections[c.id] = c;
         m_connectionPanel->addConnection(c, false);
     }
 
-    // Commands (load into memory only; panel is populated per-connection)
+    qDebug() << "loadAllData: 开始加载命令";
+    // Commands
     QList<CommandConfig> cmds = m_db.loadCommands();
+    qDebug() << "loadAllData: 加载到" << cmds.size() << "个命令";
     for (const CommandConfig &cmd : cmds)
         m_commands[cmd.id] = cmd;
 
-    // Scripts (load into memory only; list is populated per-connection)
+    qDebug() << "loadAllData: 开始加载脚本";
+    // Scripts
     QList<ScriptConfig> scripts = m_db.loadScripts();
-    for (const ScriptConfig &s : scripts)
+    qDebug() << "loadAllData: 加载到" << scripts.size() << "个脚本";
+    for (const ScriptConfig &s : scripts) {
         m_scripts[s.id] = s;
+    }
+    m_scriptEngine.setScripts(scripts);
+
+    qDebug() << "loadAllData: 刷新脚本列表";
 }
 
 void MainWindow::refreshCommandPanel(int connectionId)
@@ -504,6 +632,7 @@ void MainWindow::onConnectRequested(int connectionId)
     }
 
     if (!m_clients.contains(connectionId)) {
+
         // Create client with no parent so it can be moved to a thread
         MqttClient *client = new MqttClient();
         QThread *thread = new QThread(this);
@@ -527,10 +656,8 @@ void MainWindow::onConnectRequested(int connectionId)
                 m_statusLabel->setText("已连接：" + name);
                 showToast("已连接到 " + name);
             }
-            // Auto-subscribe to saved subscriptions
             subscribeAllForConnection(connectionId);
         }, Qt::QueuedConnection);
-
         connect(client, &MqttClient::disconnected, this, [this, connectionId]() {
             m_connectionPanel->setConnected(connectionId, false);
             if (m_activeConnectionId == connectionId) {
@@ -539,7 +666,6 @@ void MainWindow::onConnectRequested(int connectionId)
                 showToast("已断开连接");
             }
         }, Qt::QueuedConnection);
-
         connect(client, &MqttClient::messageReceived, this,
                 [this, connectionId](const QString &topic, const QString &payload, bool retained) {
                     if (m_activeConnectionId == connectionId) {
@@ -562,7 +688,6 @@ void MainWindow::onConnectRequested(int connectionId)
                         }
                     }
                 }, Qt::QueuedConnection);
-
         connect(client, &MqttClient::errorOccurred, this,
                 [this, connectionId](const QString &msg) {
                     m_connectionPanel->setLoading(connectionId, false);
@@ -570,17 +695,26 @@ void MainWindow::onConnectRequested(int connectionId)
                 }, Qt::QueuedConnection);
     }
 
-    // Show loading indicator while connecting
     m_connectionPanel->setLoading(connectionId, true);
 
     MqttClient *client = m_clients[connectionId];
-    // Invoke connectToHost on the client's thread
     QMetaObject::invokeMethod(client, "connectToHost", Qt::QueuedConnection,
                               Q_ARG(MqttConnectionConfig, config));
 
     m_activeConnectionId = connectionId;
 
-    // Build per-connection script set
+    // 先断开所有可能的旧连接，避免重复
+    disconnect(&m_scriptEngine, &ScriptEngine::messagePublished, this, nullptr);
+
+    // 再建立新的连接
+    connect(&m_scriptEngine, &ScriptEngine::messagePublished,
+            this, [this, connectionId](const QString &topic, const QString &payload) {
+                if (m_activeConnectionId == connectionId) {
+                    qDebug() << "脚本消息发布:" << topic << payload;  // 添加调试输出
+                    saveAndDisplayMessage(topic, payload, true, connectionId);
+                }
+            });
+
     QList<ScriptConfig> connScripts;
     for (const ScriptConfig &s : m_scripts.values()) {
         if (s.connectionId == connectionId || s.connectionId == -1)
@@ -592,7 +726,6 @@ void MainWindow::onConnectRequested(int connectionId)
     m_commandPanel->setClient(client);
     m_chatWidget->setClient(client);
 
-    // Reset unread badge
     m_unreadCounts[connectionId] = 0;
     m_connectionPanel->clearUnreadCount(connectionId);
 
@@ -646,6 +779,9 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
             m_statusLabel->setText("未连接");
             m_commandPanel->setClient(nullptr);
             m_chatWidget->setClient(nullptr);
+            m_scriptEngine.setClient(nullptr);
+            // 断开脚本引擎的信号连接
+            disconnect(&m_scriptEngine, &ScriptEngine::messagePublished, this, nullptr);
         }
 
         // Reset unread badge for this connection
@@ -921,7 +1057,7 @@ void MainWindow::addMessageToMonitor(const MessageRecord &msg)
     m_monitorTable->insertRow(row);
 
     m_monitorTable->setItem(row, 0, new QTableWidgetItem(
-        msg.timestamp.toString("hh:mm:ss")));
+        msg.timestamp.toString("yyyy-MM-dd hh:mm:ss")));
     m_monitorTable->setItem(row, 1, new QTableWidgetItem(
         msg.outgoing ? "↑ 发送" : "↓ 接收"));
     m_monitorTable->setItem(row, 2, new QTableWidgetItem(msg.topic));
@@ -951,6 +1087,18 @@ CommandConfig MainWindow::commandConfigForId(int commandId) const
 ScriptConfig MainWindow::scriptConfigForId(int scriptId) const
 {
     return m_scripts.value(scriptId, ScriptConfig());
+}
+
+void MainWindow::saveDatabasePathToSettings(const QString &path)
+{
+    QSettings settings("MQTTAssistant", "MQTT_assistant");
+    settings.setValue("databasePath", path);
+}
+
+QString MainWindow::loadDatabasePathFromSettings()
+{
+    QSettings settings("MQTTAssistant", "MQTT_assistant");
+    return settings.value("databasePath").toString();
 }
 
 // ──────────────────────────────────────────────
@@ -1012,16 +1160,15 @@ void MainWindow::updateSidebarTitle()
 {
     if (!m_titleLabel) return;
     // ---- Modify the path below to change the title image ----
-    const QString kTitleImagePath = QCoreApplication::applicationDirPath() + "/logo.png";
+    const QString kTitleImagePath = QCoreApplication::applicationDirPath() + "/e-linter.png";
     // ---------------------------------------------------------
     QPixmap pm(kTitleImagePath);
     if (!pm.isNull()) {
-        static const int kTitleW = 224;
-        static const int kTitleH = 48;
+        static const int kTitleW = 499 * 0.26;
+        static const int kTitleH = 146 * 0.26;
         m_titleLabel->setPixmap(pm.scaled(kTitleW, kTitleH, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     } else {
         m_titleLabel->setPixmap(QPixmap());
         m_titleLabel->setText(QString());
     }
 }
-

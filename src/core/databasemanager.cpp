@@ -28,13 +28,23 @@ bool DatabaseManager::open(const QString &dbPath)
         QDir().mkpath(QFileInfo(path).absolutePath());
     }
 
-    m_db = QSqlDatabase::addDatabase("QSQLITE", "mqtt_assistant_db");
+    // 关键修复：如果已经存在同名连接，先移除它
+    QString connectionName = "mqtt_assistant_db";
+    if (QSqlDatabase::contains(connectionName)) {
+        // 注意：在移除连接前，需要确保该连接的所有查询都已销毁
+        // 并且连接本身是关闭状态
+        QSqlDatabase::removeDatabase(connectionName);
+    }
+
+    m_db = QSqlDatabase::addDatabase("QSQLITE", connectionName);
     m_db.setDatabaseName(path);
 
     if (!m_db.open()) {
         qWarning() << "Failed to open database:" << m_db.lastError().text();
         return false;
     }
+
+    qDebug() << "数据库成功打开，路径：" << path;
     return createTables();
 }
 
@@ -64,7 +74,7 @@ bool DatabaseManager::createTables()
         "clean_session INTEGER NOT NULL DEFAULT 1,"
         "keep_alive INTEGER NOT NULL DEFAULT 60"
         ")"
-    );
+        );
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     ok = q.exec(
@@ -79,7 +89,7 @@ bool DatabaseManager::createTables()
         "loop_interval_ms INTEGER NOT NULL DEFAULT 1000,"
         "connection_id INTEGER NOT NULL DEFAULT -1"
         ")"
-    );
+        );
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     ok = q.exec(
@@ -97,7 +107,7 @@ bool DatabaseManager::createTables()
         "delay_ms INTEGER NOT NULL DEFAULT 0,"
         "connection_id INTEGER NOT NULL DEFAULT -1"
         ")"
-    );
+        );
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     ok = q.exec(
@@ -107,7 +117,7 @@ bool DatabaseManager::createTables()
         "topic TEXT NOT NULL,"
         "qos INTEGER NOT NULL DEFAULT 0"
         ")"
-    );
+        );
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     ok = q.exec(
@@ -119,7 +129,7 @@ bool DatabaseManager::createTables()
         "outgoing INTEGER NOT NULL DEFAULT 0,"
         "timestamp TEXT NOT NULL"
         ")"
-    );
+        );
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     return true;
@@ -415,7 +425,6 @@ QList<MessageRecord> DatabaseManager::loadMessages(int connectionId, int limit)
 {
     QList<MessageRecord> list;
     QSqlQuery q(m_db);
-    // Return the most-recent 'limit' messages in chronological order (oldest first)
     q.prepare("SELECT id,connection_id,topic,payload,outgoing,timestamp FROM messages "
               "WHERE connection_id=:connid ORDER BY id DESC LIMIT :lim");
     q.bindValue(":connid", connectionId);
@@ -430,7 +439,7 @@ QList<MessageRecord> DatabaseManager::loadMessages(int connectionId, int limit)
         m.payload      = q.value(3).toString();
         m.outgoing     = q.value(4).toBool();
         m.timestamp    = QDateTime::fromString(q.value(5).toString(), Qt::ISODate);
-        list.prepend(m); // prepend to get chronological order
+        list.prepend(m);
     }
     return list;
 }

@@ -22,6 +22,7 @@ public:
 signals:
     void addRequested();
     void unsubscribeRequested(const QString &topic, int id);
+    void copyTopicRequested(const QString &topic);
 
 private slots:
     void onContextMenu(const QPoint &pos);

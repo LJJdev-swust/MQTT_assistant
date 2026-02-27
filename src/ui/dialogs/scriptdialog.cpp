@@ -95,7 +95,7 @@ void ScriptDialog::setupUi()
         // Validate response topic: '#' is not allowed in publish topics
         if (m_responseTopicEdit->text().contains('#')) {
             QMessageBox::warning(this, "主题格式错误",
-                "响应主题（发布主题）不能包含通配符 '#'，请修正后重试。");
+                                 "响应主题（发布主题）不能包含通配符 '#'，请修正后重试。");
             return;
         }
         accept();

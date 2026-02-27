@@ -24,6 +24,9 @@ public:
     void clearScripts();
     QList<ScriptConfig> scripts() const { return m_scripts; }
 
+signals:
+    void messagePublished(const QString &topic, const QString &payload);
+
 public slots:
     void onMessageReceived(const QString &topic, const QString &payload, bool retained);
 

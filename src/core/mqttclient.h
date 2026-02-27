@@ -3,12 +3,18 @@
 
 #include <QObject>
 #include <QMqttClient>
-#include <QMqttMessage>
 #include <QMqttTopicFilter>
 #include <QMqttTopicName>
+#include <QMqttMessage>
 #include <QSslSocket>
 #include <QSslConfiguration>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+#include <QThread>
 #include <QAtomicInt>
+#include <QTimer>
+#include <QOverload>
 #include "models.h"
 
 class MqttClient : public QObject
@@ -24,7 +30,6 @@ public:
     Q_INVOKABLE void subscribe(const QString &topic, int qos = 0);
     Q_INVOKABLE void unsubscribe(const QString &topic);
 
-    // Thread-safe: uses atomic flag updated by onConnected/onDisconnected
     bool isConnected() const;
     MqttConnectionConfig currentConfig() const { return m_config; }
 
@@ -37,14 +42,17 @@ signals:
 private slots:
     void onConnected();
     void onDisconnected();
+    void onMessageReceived(const QByteArray &payload, const QMqttTopicName &topic);
     void onMessageReceived(const QMqttMessage &message);
     void onErrorChanged(QMqttClient::ClientError error);
 
 private:
     QMqttClient  *m_client;
     MqttConnectionConfig m_config;
-    QAtomicInt   m_connected{0}; // 1 = connected, 0 = not connected
+    bool m_connected = false;
     QString mqttErrorString(QMqttClient::ClientError error) const;
+    void logToFile(const QString &message);
+
 };
 
 #endif // MQTTCLIENT_H
