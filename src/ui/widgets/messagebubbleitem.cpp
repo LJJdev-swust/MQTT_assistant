@@ -70,7 +70,8 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
     QString typeTag = payloadTypeTag(msg.payload);
 
     // Type tag label
-    QLabel *typeLabel = new QLabel(typeTag, bubbleWidget);
+    QString retainedTag = msg.retained ? " [留存]" : "";
+    QLabel *typeLabel = new QLabel(typeTag + retainedTag, bubbleWidget);
     QFont typeFont = typeLabel->font();
     typeFont.setPointSize(typeFont.pointSize() - 2);
     typeFont.setBold(true);

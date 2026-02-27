@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <QDateTime>
+#include <QMetaType>
 
 struct MqttConnectionConfig {
     int id;
@@ -75,10 +76,13 @@ struct MessageRecord {
     QString topic;
     QString payload;
     bool outgoing;
+    bool retained;
     QDateTime timestamp;
 
     MessageRecord()
-        : id(-1), connectionId(-1), outgoing(false) {}
+        : id(-1), connectionId(-1), outgoing(false), retained(false) {}
 };
+
+Q_DECLARE_METATYPE(MqttConnectionConfig)
 
 #endif // MODELS_H

@@ -3,7 +3,6 @@
 #include <QRegularExpression>
 #include <QDateTime>
 #include <QTimer>
-
 ScriptEngine::ScriptEngine(QObject *parent)
     : QObject(parent)
     , m_client(nullptr)
@@ -20,8 +19,7 @@ void ScriptEngine::setClient(MqttClient *client)
     m_client = client;
     if (m_client) {
         connect(m_client, &MqttClient::messageReceived, this, &ScriptEngine::onMessageReceived);
-    }
-}
+    }}
 
 void ScriptEngine::setScripts(const QList<ScriptConfig> &scripts)
 {
@@ -59,8 +57,12 @@ void ScriptEngine::clearScripts()
     m_scripts.clear();
 }
 
-void ScriptEngine::onMessageReceived(const QString &topic, const QString &payload)
+void ScriptEngine::onMessageReceived(const QString &topic, const QString &payload, bool retained)
 {
+    // Do not trigger scripts for retained messages (broker resent state on reconnect)
+    if (retained)
+        return;
+
     if (!m_client || !m_client->isConnected())
         return;
 
@@ -131,12 +133,22 @@ void ScriptEngine::triggerScript(const ScriptConfig &script,
     bool retain = script.responseRetain;
 
     if (script.delayMs <= 0) {
-        m_client->publish(responseTopic, responsePayload, qos, retain);
+        // Use invokeMethod so the call is safe even if client lives on another thread
+        QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
+                                  Q_ARG(QString, responseTopic),
+                                  Q_ARG(QString, responsePayload),
+                                  Q_ARG(int, qos),
+                                  Q_ARG(bool, retain));
     } else {
         // Capture by value for deferred execution
         QTimer::singleShot(script.delayMs, this, [this, responseTopic, responsePayload, qos, retain]() {
-            if (m_client && m_client->isConnected())
-                m_client->publish(responseTopic, responsePayload, qos, retain);
+            if (m_client && m_client->isConnected()) {
+                QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
+                                          Q_ARG(QString, responseTopic),
+                                          Q_ARG(QString, responsePayload),
+                                          Q_ARG(int, qos),
+                                          Q_ARG(bool, retain));
+            }
         });
     }
 }

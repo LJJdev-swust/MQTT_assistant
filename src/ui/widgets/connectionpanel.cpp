@@ -46,6 +46,7 @@ void ConnectionPanel::addConnection(const MqttConnectionConfig &config, bool con
     m_connectedState[config.id] = connected;
     m_loadingState[config.id]   = false;
     m_spinnerFrame[config.id]   = 0;
+    m_unreadCount[config.id]    = 0;
     QListWidgetItem *item = new QListWidgetItem(m_listWidget);
     item->setData(Qt::UserRole,     config.id);
     item->setData(Qt::UserRole + 1, config.name); // store name separately
@@ -70,6 +71,7 @@ void ConnectionPanel::removeConnection(int id)
         m_connectedState.remove(id);
         m_loadingState.remove(id);
         m_spinnerFrame.remove(id);
+        m_unreadCount.remove(id);
         if (!hasAnyLoading())
             m_spinnerTimer->stop();
     }
@@ -113,7 +115,23 @@ void ConnectionPanel::clearConnections()
     m_connectedState.clear();
     m_loadingState.clear();
     m_spinnerFrame.clear();
+    m_unreadCount.clear();
     m_spinnerTimer->stop();
+}
+
+void ConnectionPanel::setUnreadCount(int id, int count)
+{
+    m_unreadCount[id] = count;
+    QListWidgetItem *item = findItem(id);
+    if (item) {
+        QString name = item->data(Qt::UserRole + 1).toString();
+        updateItemDisplay(item, id, name);
+    }
+}
+
+void ConnectionPanel::clearUnreadCount(int id)
+{
+    setUnreadCount(id, 0);
 }
 
 int ConnectionPanel::selectedConnectionId() const
@@ -140,7 +158,11 @@ void ConnectionPanel::updateItemDisplay(QListWidgetItem *item, int connectionId,
         prefix = QString::fromUtf8("\u25CB") + " "; // ○
         color  = QColor("#a0a0b0");
     }
-    item->setText(prefix + name);
+
+    int unread = m_unreadCount.value(connectionId, 0);
+    QString badge = (unread > 0) ? QString("  [%1]").arg(unread) : QString();
+
+    item->setText(prefix + name + badge);
     item->setForeground(color);
     item->setToolTip(loading ? "连接中..." : (connected ? "已连接" : "未连接"));
 }

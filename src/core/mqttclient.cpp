@@ -10,7 +10,9 @@ MqttClient::MqttClient(QObject *parent)
 {
     connect(m_client, &QMqttClient::connected,    this, &MqttClient::onConnected);
     connect(m_client, &QMqttClient::disconnected, this, &MqttClient::onDisconnected);
-    connect(m_client, &QMqttClient::messageReceived, this, &MqttClient::onMessageReceived);
+    connect(m_client,
+            QOverload<const QMqttMessage &>::of(&QMqttClient::messageReceived),
+            this, &MqttClient::onMessageReceived);
     connect(m_client, &QMqttClient::errorChanged, this, &MqttClient::onErrorChanged);
 }
 
@@ -101,20 +103,22 @@ void MqttClient::unsubscribe(const QString &topic)
 
 bool MqttClient::isConnected() const
 {
-    return m_client->state() == QMqttClient::Connected;
+    return m_connected.load() != 0;
 }
 
 void MqttClient::onConnected()
 {
+    m_connected.store(1);
     emit connected();
 }
 
 void MqttClient::onDisconnected()
 {
+    m_connected.store(0);
     emit disconnected();
 }
 
-void MqttClient::onMessageReceived(const QByteArray &payload, const QMqttTopicName &topic)
+void MqttClient::onMessageReceived(const QMqttMessage &message)
 {
     const QByteArray &bytes = message.payload();
     QString text;
@@ -124,7 +128,7 @@ void MqttClient::onMessageReceived(const QByteArray &payload, const QMqttTopicNa
     if (decoder.hasError()) {
         text = "HEX: " + QString::fromLatin1(bytes.toHex(' ')).toUpper();
     }
-    emit messageReceived(message.topic().name(), text);
+    emit messageReceived(message.topic().name(), text, message.retain());
 }
 
 void MqttClient::onErrorChanged(QMqttClient::ClientError error)

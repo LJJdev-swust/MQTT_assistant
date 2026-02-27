@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QMap>
 #include <QTimer>
+#include <QThread>
 
 #include "core/models.h"
 #include "core/mqttclient.h"
@@ -67,13 +68,15 @@ private:
     void setupContentArea(QWidget *content);
     void setupMenuBar();
     void loadAllData();
-    void refreshScriptList();
+    void refreshCommandPanel(int connectionId);
+    void refreshScriptList(int connectionId);
     void addMessageToMonitor(const MessageRecord &msg);
     void saveAndDisplayMessage(const QString &topic, const QString &payload,
-                               bool outgoing, int connectionId);
+                               bool outgoing, int connectionId, bool retained = false);
     void showToast(const QString &message, int durationMs = 2500);
     void subscribeAllForConnection(int connectionId);
     void updateSidebarTitle();
+    void stopClientThread(int connectionId);
 
     MqttClient      *clientForId(int connectionId);
     MqttConnectionConfig configForId(int connectionId) const;
@@ -86,6 +89,8 @@ private:
     QMap<int, CommandConfig>        m_commands;    // id -> config
     QMap<int, ScriptConfig>         m_scripts;     // id -> config
     QMap<int, MqttClient*>          m_clients;     // connectionId -> client
+    QMap<int, QThread*>             m_clientThreads; // connectionId -> thread
+    QMap<int, int>                  m_unreadCounts;  // connectionId -> unread count
     ScriptEngine                    m_scriptEngine;
 
     int m_activeConnectionId;

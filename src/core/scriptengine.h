@@ -25,7 +25,7 @@ public:
     QList<ScriptConfig> scripts() const { return m_scripts; }
 
 public slots:
-    void onMessageReceived(const QString &topic, const QString &payload);
+    void onMessageReceived(const QString &topic, const QString &payload, bool retained);
 
 private:
     bool matchesCondition(const ScriptConfig &script, const QString &topic, const QString &payload) const;

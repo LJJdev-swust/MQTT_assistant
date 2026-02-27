@@ -372,7 +372,33 @@ QDialogButtonBox QPushButton {
     min-width: 80px;
 }
 
-/* ---------- Sidebar labels ---------- */
+/* ---------- Collapsible Section header ---------- */
+QWidget#collapsibleHeader {
+    background-color: #e8e8ee;
+    border-bottom: 1px solid #d0d0d0;
+}
+QWidget#collapsibleHeader:hover {
+    background-color: #dcdcec;
+}
+QLabel#labelSectionTitle {
+    color: #1e1e2e;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+QPushButton#btnCollapse {
+    background: transparent;
+    color: #666666;
+    border: none;
+    font-size: 10px;
+    padding: 0;
+    min-height: 16px;
+}
+QPushButton#btnCollapse:hover {
+    color: #ea5413;
+}
+
+/* ---------- Sidebar labels (legacy, kept for compat) ---------- */
 QLabel#labelAppTitle {
     color: #ea5413;
     font-size: 16px;
