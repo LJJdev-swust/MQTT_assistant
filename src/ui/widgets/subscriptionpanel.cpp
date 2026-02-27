@@ -2,6 +2,8 @@
 #include <QVBoxLayout>
 #include <QMenu>
 #include <QAction>
+#include <QApplication>
+#include <QClipboard>
 
 SubscriptionPanel::SubscriptionPanel(QWidget *parent)
     : QWidget(parent)
@@ -66,10 +68,21 @@ void SubscriptionPanel::onContextMenu(const QPoint &pos)
     QString topic = item->data(Qt::UserRole + 1).toString();
 
     QMenu menu(this);
+
+    QAction *actCopyTopic = menu.addAction("复制主题");
+    menu.addSeparator();
     QAction *actUnsub = menu.addAction("取消订阅");
+
     QAction *chosen = menu.exec(m_listWidget->viewport()->mapToGlobal(pos));
-    if (chosen == actUnsub)
+
+    if (chosen == actCopyTopic) {
+        QClipboard *clipboard = QApplication::clipboard();
+        clipboard->setText(topic);
+        emit copyTopicRequested(topic);  // 发送信号，让 MainWindow 显示 toast
+    }
+    else if (chosen == actUnsub) {
         emit unsubscribeRequested(topic, id);
+    }
 }
 
 QListWidgetItem *SubscriptionPanel::findItem(int id) const

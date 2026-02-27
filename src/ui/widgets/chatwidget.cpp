@@ -19,6 +19,7 @@ ChatWidget::ChatWidget(QWidget *parent)
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
+
     // ---- Splitter: messages (top) / input (bottom) ----
     m_splitter = new QSplitter(Qt::Vertical, this);
     m_splitter->setHandleWidth(5);
@@ -140,7 +141,7 @@ void ChatWidget::onSendClicked()
     // Validate: publish topic must not contain '#'
     if (topic.contains('#')) {
         QMessageBox::warning(this, "主题格式错误",
-            "发布主题不能包含通配符 '#'，请修正主题后重试。");
+                             "发布主题不能包含通配符 '#'，请修正主题后重试。");
         return;
     }
 
@@ -193,7 +194,7 @@ void ChatWidget::scrollToBottom()
 {
     m_scrollArea->verticalScrollBar()->setValue(
         m_scrollArea->verticalScrollBar()->maximum()
-    );
+        );
 }
 
 void ChatWidget::saveTopicHistory()

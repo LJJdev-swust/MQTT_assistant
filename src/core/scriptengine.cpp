@@ -3,6 +3,7 @@
 #include <QRegularExpression>
 #include <QDateTime>
 #include <QTimer>
+
 ScriptEngine::ScriptEngine(QObject *parent)
     : QObject(parent)
     , m_client(nullptr)
@@ -18,8 +19,11 @@ void ScriptEngine::setClient(MqttClient *client)
     }
     m_client = client;
     if (m_client) {
-        connect(m_client, &MqttClient::messageReceived, this, &ScriptEngine::onMessageReceived);
-    }}
+        // 确保参数匹配
+        connect(m_client, &MqttClient::messageReceived,
+                this, &ScriptEngine::onMessageReceived);
+    }
+}
 
 void ScriptEngine::setScripts(const QList<ScriptConfig> &scripts)
 {
@@ -59,7 +63,6 @@ void ScriptEngine::clearScripts()
 
 void ScriptEngine::onMessageReceived(const QString &topic, const QString &payload, bool retained)
 {
-    // Do not trigger scripts for retained messages (broker resent state on reconnect)
     if (retained)
         return;
 
@@ -117,9 +120,20 @@ QString ScriptEngine::substituteVariables(const QString &tmpl,
                                           const QString &payload) const
 {
     QString result = tmpl;
+
+    // 原有的 ISO 格式时间戳（返回字符串）
     result.replace("{{timestamp}}", QDateTime::currentDateTime().toString(Qt::ISODate));
+
+    // 添加 Unix 时间戳（秒级，返回数字）
+    result.replace("{{timestamp_unix}}", QString::number(QDateTime::currentSecsSinceEpoch()));
+
+    // 添加毫秒级时间戳
+    result.replace("{{timestamp_ms}}", QString::number(QDateTime::currentMSecsSinceEpoch()));
+
+    // 原有的变量替换
     result.replace("{{topic}}",     topic);
     result.replace("{{payload}}",   payload);
+
     return result;
 }
 
@@ -132,22 +146,32 @@ void ScriptEngine::triggerScript(const ScriptConfig &script,
     int qos     = script.responseQos;
     bool retain = script.responseRetain;
 
+    // 添加调试输出，查看触发次数
+    qDebug() << "脚本触发 - ID:" << script.id
+             << "名称:" << script.name
+             << "响应主题:" << responseTopic
+             << "响应内容:" << responsePayload;
+
     if (script.delayMs <= 0) {
-        // Use invokeMethod so the call is safe even if client lives on another thread
         QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
                                   Q_ARG(QString, responseTopic),
                                   Q_ARG(QString, responsePayload),
                                   Q_ARG(int, qos),
                                   Q_ARG(bool, retain));
+        qDebug() << "立即发布消息";
+        emit messagePublished(responseTopic, responsePayload);
     } else {
-        // Capture by value for deferred execution
+        qDebug() << "延迟" << script.delayMs << "ms后发布消息";
+        // 使用一个标志位防止多次触发（如果需要）
         QTimer::singleShot(script.delayMs, this, [this, responseTopic, responsePayload, qos, retain]() {
-            if (m_client && m_client->isConnected()) {
+if (m_client && m_client->isConnected()) {
                 QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
                                           Q_ARG(QString, responseTopic),
                                           Q_ARG(QString, responsePayload),
                                           Q_ARG(int, qos),
                                           Q_ARG(bool, retain));
+                qDebug() << "延迟后发布消息";
+                emit messagePublished(responseTopic, responsePayload);
             }
         });
     }

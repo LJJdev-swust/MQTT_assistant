@@ -3,7 +3,9 @@
 
 #include <QObject>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QList>
+#include <QFile>
 #include "models.h"
 
 class DatabaseManager : public QObject
@@ -15,6 +17,14 @@ public:
 
     bool open(const QString &dbPath = QString());
     void close();
+
+    // 新增：数据库路径和存在性检查
+    QString databasePath() const { return m_db.databaseName(); }
+    bool databaseFileExists() const {
+        QString path = m_db.databaseName();
+        return !path.isEmpty() && QFile::exists(path);
+    }
+    QString lastError() const { return m_db.lastError().text(); }
 
     // Connections
     QList<MqttConnectionConfig> loadConnections();

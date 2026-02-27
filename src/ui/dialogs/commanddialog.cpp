@@ -82,7 +82,7 @@ void CommandDialog::setupUi()
         // Validate publish topic: '#' is not allowed
         if (m_topicEdit->text().contains('#')) {
             QMessageBox::warning(this, "主题格式错误",
-                "发布主题不能包含通配符 '#'，请修正后重试。");
+                                 "发布主题不能包含通配符 '#'，请修正后重试。");
             return;
         }
         accept();

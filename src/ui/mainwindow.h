@@ -7,6 +7,7 @@
 #include <QTabWidget>
 #include <QLabel>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QMap>
 #include <QTimer>
 #include <QThread>
@@ -78,6 +79,11 @@ private:
     void updateSidebarTitle();
     void stopClientThread(int connectionId);
 
+    bool initializeDatabase();
+    bool promptForDatabasePath();
+    void saveDatabasePathToSettings(const QString &path);
+    QString loadDatabasePathFromSettings();
+
     MqttClient      *clientForId(int connectionId);
     MqttConnectionConfig configForId(int connectionId) const;
     CommandConfig    commandConfigForId(int commandId) const;
@@ -104,7 +110,7 @@ private:
     QTableWidget      *m_monitorTable;
     QTabWidget        *m_tabWidget;
     QLabel            *m_statusLabel;
-    QLabel            *m_titleLabel; // sidebar title (image or text)
+    QLabel            *m_titleLabel;
 
     // Toast
     QLabel  *m_toastLabel;

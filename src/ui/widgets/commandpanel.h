@@ -26,6 +26,7 @@ signals:
     void editRequested(int commandId);
     void deleteRequested(int commandId);
     void addRequested();
+    void commandSent(const QString &topic, const QString &payload);
 
 private slots:
     void onContextMenu(const QPoint &pos);
