@@ -5,7 +5,6 @@
 #include <QAction>
 #include <QMessageBox>
 #include <QDateTime>
-
 CommandPanel::CommandPanel(QWidget *parent)
     : QWidget(parent)
     , m_client(nullptr)
@@ -117,7 +116,10 @@ void CommandPanel::sendCommand(int commandId)
     payload.replace("{{timestamp}}", QDateTime::currentDateTime().toString(Qt::ISODate));
     payload.replace("{{topic}}", cmd.topic);
 
-    m_client->publish(cmd.topic, payload, cmd.qos, cmd.retain);
+    // Use invokeMethod so the call is safe even if client is on another thread
+    QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
+                              Q_ARG(QString, cmd.topic), Q_ARG(QString, payload),
+                              Q_ARG(int, cmd.qos), Q_ARG(bool, cmd.retain));
 }
 
 void CommandPanel::startLoop(int commandId)

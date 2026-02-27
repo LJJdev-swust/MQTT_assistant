@@ -2,6 +2,7 @@
 #include "dialogs/connectiondialog.h"
 #include "dialogs/commanddialog.h"
 #include "dialogs/scriptdialog.h"
+#include "widgets/collapsiblesection.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -38,6 +39,9 @@ MainWindow::MainWindow(QWidget *parent)
     , m_toastLabel(nullptr)
     , m_toastTimer(nullptr)
 {
+    // Register custom types for cross-thread signal/slot delivery
+    qRegisterMetaType<MqttConnectionConfig>("MqttConnectionConfig");
+
     setWindowTitle("MQTT 助手");
     setMinimumSize(960, 640);
     resize(1200, 780);
@@ -68,11 +72,8 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    for (MqttClient *client : m_clients.values()) {
-        if (client->isConnected())
-            client->disconnectFromHost();
-        client->deleteLater();
-    }
+    for (int id : m_clients.keys())
+        stopClientThread(id);
 }
 
 // ──────────────────────────────────────────────
@@ -163,82 +164,54 @@ void MainWindow::setupSidebar(QWidget *sidebar)
     sep->setObjectName("sidebarSep");
     layout->addWidget(sep);
 
-    // ---- Connections section ----
-    QHBoxLayout *connHeader = new QHBoxLayout();
-    QLabel *connLabel = new QLabel("连接管理", sidebar);
-    connLabel->setObjectName("labelSectionConnections");
-    QPushButton *addConnBtn = new QPushButton("+", sidebar);
-    addConnBtn->setObjectName("btnAddConnection");
-    addConnBtn->setFixedSize(24, 24);
-    addConnBtn->setToolTip("新建连接");
-    connHeader->addWidget(connLabel);
-    connHeader->addStretch();
-    connHeader->addWidget(addConnBtn);
-    layout->addLayout(connHeader);
+    // ── Panels (as child widgets of CollapsibleSection) ──────────────
+    m_connectionPanel = new ConnectionPanel();
+    m_subscriptionPanel = new SubscriptionPanel();
+    m_commandPanel = new CommandPanel();
 
-    m_connectionPanel = new ConnectionPanel(sidebar);
-    m_connectionPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_connectionPanel->setMinimumHeight(80);
-    m_connectionPanel->setMaximumHeight(160);
-    layout->addWidget(m_connectionPanel);
-
-    // ---- Subscriptions section ----
-    QHBoxLayout *subHeader = new QHBoxLayout();
-    QLabel *subLabel = new QLabel("订阅管理", sidebar);
-    subLabel->setObjectName("labelSectionSubscriptions");
-    QPushButton *addSubBtn = new QPushButton("+", sidebar);
-    addSubBtn->setObjectName("btnAddSubscription");
-    addSubBtn->setFixedSize(24, 24);
-    addSubBtn->setToolTip("新增订阅");
-    subHeader->addWidget(subLabel);
-    subHeader->addStretch();
-    subHeader->addWidget(addSubBtn);
-    layout->addLayout(subHeader);
-
-    m_subscriptionPanel = new SubscriptionPanel(sidebar);
-    m_subscriptionPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_subscriptionPanel->setMinimumHeight(60);
-    m_subscriptionPanel->setMaximumHeight(140);
-    layout->addWidget(m_subscriptionPanel);
-
-    // ---- Commands section ----
-    QHBoxLayout *cmdHeader = new QHBoxLayout();
-    QLabel *cmdLabel = new QLabel("命令", sidebar);
-    cmdLabel->setObjectName("labelSectionCommands");
-    QPushButton *addCmdBtn = new QPushButton("+", sidebar);
-    addCmdBtn->setObjectName("btnAddCommand");
-    addCmdBtn->setFixedSize(24, 24);
-    addCmdBtn->setToolTip("新建命令");
-    cmdHeader->addWidget(cmdLabel);
-    cmdHeader->addStretch();
-    cmdHeader->addWidget(addCmdBtn);
-    layout->addLayout(cmdHeader);
-
-    m_commandPanel = new CommandPanel(sidebar);
-    m_commandPanel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    m_commandPanel->setMinimumHeight(60);
-    m_commandPanel->setMaximumHeight(140);
-    layout->addWidget(m_commandPanel);
-
-    // ---- Scripts section ----
-    QHBoxLayout *scriptHeader = new QHBoxLayout();
-    QLabel *scriptLabel = new QLabel("脚本", sidebar);
-    scriptLabel->setObjectName("labelSectionScripts");
-    QPushButton *addScriptBtn = new QPushButton("+", sidebar);
-    addScriptBtn->setObjectName("btnAddScript");
-    addScriptBtn->setFixedSize(24, 24);
-    addScriptBtn->setToolTip("新建脚本");
-    scriptHeader->addWidget(scriptLabel);
-    scriptHeader->addStretch();
-    scriptHeader->addWidget(addScriptBtn);
-    layout->addLayout(scriptHeader);
-
-    m_scriptList = new QListWidget(sidebar);
+    m_scriptList = new QListWidget();
     m_scriptList->setContextMenuPolicy(Qt::CustomContextMenu);
     m_scriptList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    layout->addWidget(m_scriptList, 1);
 
-    // Wire up signals
+    // ── Add-buttons for each section header ──────────────────────────
+    auto makeAddBtn = [&](const QString &objName, const QString &tip) -> QPushButton * {
+        QPushButton *btn = new QPushButton("+");
+        btn->setObjectName(objName);
+        btn->setFixedSize(24, 24);
+        btn->setToolTip(tip);
+        return btn;
+    };
+    QPushButton *addConnBtn   = makeAddBtn("btnAddConnection",   "新建连接");
+    QPushButton *addSubBtn    = makeAddBtn("btnAddSubscription", "新增订阅");
+    QPushButton *addCmdBtn    = makeAddBtn("btnAddCommand",      "新建命令");
+    QPushButton *addScriptBtn = makeAddBtn("btnAddScript",       "新建脚本");
+
+    // ── Collapsible sections ──────────────────────────────────────────
+    auto *connSection   = new CollapsibleSection("连接管理",   m_connectionPanel);
+    auto *subSection    = new CollapsibleSection("订阅管理",   m_subscriptionPanel);
+    auto *cmdSection    = new CollapsibleSection("命令",       m_commandPanel);
+    auto *scriptSection = new CollapsibleSection("脚本",       m_scriptList);
+
+    connSection->addHeaderWidget(addConnBtn);
+    subSection->addHeaderWidget(addSubBtn);
+    cmdSection->addHeaderWidget(addCmdBtn);
+    scriptSection->addHeaderWidget(addScriptBtn);
+
+    // ── Vertical splitter for resizable sections ──────────────────────
+    QSplitter *sectionSplitter = new QSplitter(Qt::Vertical, sidebar);
+    sectionSplitter->setChildrenCollapsible(false);
+    sectionSplitter->addWidget(connSection);
+    sectionSplitter->addWidget(subSection);
+    sectionSplitter->addWidget(cmdSection);
+    sectionSplitter->addWidget(scriptSection);
+    sectionSplitter->setStretchFactor(0, 2);
+    sectionSplitter->setStretchFactor(1, 1);
+    sectionSplitter->setStretchFactor(2, 1);
+    sectionSplitter->setStretchFactor(3, 2);
+
+    layout->addWidget(sectionSplitter, 1);
+
+    // ── Wire up signals ───────────────────────────────────────────────
     connect(addConnBtn,   &QPushButton::clicked, this, &MainWindow::onAddConnection);
     connect(addSubBtn,    &QPushButton::clicked, this, &MainWindow::onAddSubscription);
     connect(addCmdBtn,    &QPushButton::clicked, this, &MainWindow::onAddCommand);
@@ -396,27 +369,33 @@ void MainWindow::loadAllData()
         m_connectionPanel->addConnection(c, false);
     }
 
-    // Commands
+    // Commands (load into memory only; panel is populated per-connection)
     QList<CommandConfig> cmds = m_db.loadCommands();
-    for (const CommandConfig &cmd : cmds) {
+    for (const CommandConfig &cmd : cmds)
         m_commands[cmd.id] = cmd;
-        m_commandPanel->addCommand(cmd);
-    }
 
-    // Scripts
+    // Scripts (load into memory only; list is populated per-connection)
     QList<ScriptConfig> scripts = m_db.loadScripts();
-    for (const ScriptConfig &s : scripts) {
+    for (const ScriptConfig &s : scripts)
         m_scripts[s.id] = s;
-    }
-    m_scriptEngine.setScripts(scripts);
-    refreshScriptList();
 }
 
-void MainWindow::refreshScriptList()
+void MainWindow::refreshCommandPanel(int connectionId)
+{
+    m_commandPanel->clearCommands();
+    for (const CommandConfig &cmd : m_commands.values()) {
+        if (cmd.connectionId == connectionId || cmd.connectionId == -1)
+            m_commandPanel->addCommand(cmd);
+    }
+}
+
+void MainWindow::refreshScriptList(int connectionId)
 {
     m_scriptList->blockSignals(true);
     m_scriptList->clear();
     for (const ScriptConfig &s : m_scripts.values()) {
+        if (s.connectionId != connectionId && s.connectionId != -1)
+            continue;
         QListWidgetItem *item = new QListWidgetItem(s.name);
         item->setData(Qt::UserRole, s.id);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
@@ -436,8 +415,27 @@ void MainWindow::subscribeAllForConnection(int connectionId)
     MqttClient *client = m_clients[connectionId];
     if (!client->isConnected()) return;
     QList<SubscriptionConfig> subs = m_db.loadSubscriptions(connectionId);
-    for (const SubscriptionConfig &s : subs)
-        client->subscribe(s.topic, s.qos);
+    for (const SubscriptionConfig &s : subs) {
+        QMetaObject::invokeMethod(client, "subscribe", Qt::QueuedConnection,
+                                  Q_ARG(QString, s.topic), Q_ARG(int, s.qos));
+    }
+}
+
+void MainWindow::stopClientThread(int connectionId)
+{
+    if (m_clients.contains(connectionId)) {
+        MqttClient *client = m_clients.take(connectionId);
+        QMetaObject::invokeMethod(client, "disconnectFromHost", Qt::QueuedConnection);
+        if (m_clientThreads.contains(connectionId)) {
+            QThread *thread = m_clientThreads.take(connectionId);
+            // Quit the event loop; client will be deleted via the
+            // QThread::finished -> client->deleteLater() connection.
+            thread->quit();
+            // Do not block with thread->wait() to keep the UI responsive.
+            // The thread and client will clean up asynchronously.
+        }
+    }
+    m_unreadCounts.remove(connectionId);
 }
 
 // ──────────────────────────────────────────────
@@ -488,9 +486,7 @@ void MainWindow::onDeleteConnection(int connectionId)
     if (ret != QMessageBox::Yes) return;
 
     if (m_clients.contains(connectionId)) {
-        m_clients[connectionId]->disconnectFromHost();
-        m_clients[connectionId]->deleteLater();
-        m_clients.remove(connectionId);
+        stopClientThread(connectionId);
     }
     m_db.deleteMessages(connectionId);
     m_db.deleteConnection(connectionId);
@@ -511,9 +507,31 @@ void MainWindow::onConnectRequested(int connectionId)
     if (!m_connections.contains(connectionId)) return;
     const MqttConnectionConfig &config = m_connections[connectionId];
 
+    // Enforce maximum of 5 simultaneous connections
+    int activeCount = 0;
+    for (auto it = m_clients.begin(); it != m_clients.end(); ++it) {
+        if (it.value()->isConnected()) ++activeCount;
+    }
+    if (activeCount >= 5 && !m_clients.contains(connectionId)) {
+        showToast("最多同时连接 5 个平台");
+        return;
+    }
+
     if (!m_clients.contains(connectionId)) {
-        MqttClient *client = new MqttClient(this);
-        m_clients[connectionId] = client;
+        // Create client with no parent so it can be moved to a thread
+        MqttClient *client = new MqttClient();
+        QThread *thread = new QThread(this);
+
+        // Move client to its own thread for UI-smooth operation
+        client->moveToThread(thread);
+
+        // Clean up client when thread finishes
+        connect(thread, &QThread::finished, client, &QObject::deleteLater);
+        thread->start();
+
+        m_clients[connectionId]      = client;
+        m_clientThreads[connectionId] = thread;
+        m_unreadCounts[connectionId]  = 0;
 
         connect(client, &MqttClient::connected, this, [this, connectionId]() {
             m_connectionPanel->setConnected(connectionId, true);
@@ -525,7 +543,8 @@ void MainWindow::onConnectRequested(int connectionId)
             }
             // Auto-subscribe to saved subscriptions
             subscribeAllForConnection(connectionId);
-        });
+        }, Qt::QueuedConnection);
+
         connect(client, &MqttClient::disconnected, this, [this, connectionId]() {
             m_connectionPanel->setConnected(connectionId, false);
             if (m_activeConnectionId == connectionId) {
@@ -533,37 +552,67 @@ void MainWindow::onConnectRequested(int connectionId)
                 m_statusLabel->setText("已断开连接");
                 showToast("已断开连接");
             }
-        });
+        }, Qt::QueuedConnection);
+
         connect(client, &MqttClient::messageReceived, this,
-                [this, connectionId](const QString &topic, const QString &payload) {
-                    if (m_activeConnectionId == connectionId)
-                        saveAndDisplayMessage(topic, payload, false, connectionId);
-                });
+                [this, connectionId](const QString &topic, const QString &payload, bool retained) {
+                    if (m_activeConnectionId == connectionId) {
+                        saveAndDisplayMessage(topic, payload, false, connectionId, retained);
+                    } else {
+                        // Save to DB and increment unread badge for inactive connection
+                        if (!retained) {
+                            MessageRecord msg;
+                            msg.connectionId = connectionId;
+                            msg.topic        = topic;
+                            msg.payload      = payload;
+                            msg.outgoing     = false;
+                            msg.retained     = false;
+                            msg.timestamp    = QDateTime::currentDateTime();
+                            m_db.saveMessage(msg);
+
+                            int count = m_unreadCounts.value(connectionId, 0) + 1;
+                            m_unreadCounts[connectionId] = count;
+                            m_connectionPanel->setUnreadCount(connectionId, count);
+                        }
+                    }
+                }, Qt::QueuedConnection);
+
         connect(client, &MqttClient::errorOccurred, this,
                 [this, connectionId](const QString &msg) {
                     m_connectionPanel->setLoading(connectionId, false);
                     showToast("错误：" + msg, 4000);
-                });
+                }, Qt::QueuedConnection);
     }
 
-    // Show loading indicator while connecting (requirement 9)
+    // Show loading indicator while connecting
     m_connectionPanel->setLoading(connectionId, true);
 
     MqttClient *client = m_clients[connectionId];
-    client->connectToHost(config);
+    // Invoke connectToHost on the client's thread
+    QMetaObject::invokeMethod(client, "connectToHost", Qt::QueuedConnection,
+                              Q_ARG(MqttConnectionConfig, config));
 
     m_activeConnectionId = connectionId;
-    m_scriptEngine.setClient(client);
 
+    // Build per-connection script set
     QList<ScriptConfig> connScripts;
     for (const ScriptConfig &s : m_scripts.values()) {
         if (s.connectionId == connectionId || s.connectionId == -1)
             connScripts.append(s);
     }
+    m_scriptEngine.setClient(client);
     m_scriptEngine.setScripts(connScripts);
 
     m_commandPanel->setClient(client);
     m_chatWidget->setClient(client);
+
+    // Reset unread badge
+    m_unreadCounts[connectionId] = 0;
+    m_connectionPanel->clearUnreadCount(connectionId);
+
+    // Refresh per-connection panels
+    refreshCommandPanel(connectionId);
+    refreshScriptList(connectionId);
 
     // Load message history
     QList<MessageRecord> history = m_db.loadMessages(connectionId, 100);
@@ -577,7 +626,8 @@ void MainWindow::onConnectRequested(int connectionId)
 void MainWindow::onDisconnectRequested(int connectionId)
 {
     if (!m_clients.contains(connectionId)) return;
-    m_clients[connectionId]->disconnectFromHost();
+    MqttClient *client = m_clients[connectionId];
+    QMetaObject::invokeMethod(client, "disconnectFromHost", Qt::QueuedConnection);
 }
 
 void MainWindow::onConnectionSelectionChanged(int connectionId)
@@ -596,12 +646,29 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
             m_statusLabel->setText("已连接：" + name);
             m_commandPanel->setClient(m_clients[connectionId]);
             m_chatWidget->setClient(m_clients[connectionId]);
+
+            // Update script engine for this connection
+            QList<ScriptConfig> connScripts;
+            for (const ScriptConfig &s : m_scripts.values()) {
+                if (s.connectionId == connectionId || s.connectionId == -1)
+                    connScripts.append(s);
+            }
+            m_scriptEngine.setClient(m_clients[connectionId]);
+            m_scriptEngine.setScripts(connScripts);
         } else {
             setWindowTitle("MQTT 助手");
             m_statusLabel->setText("未连接");
             m_commandPanel->setClient(nullptr);
             m_chatWidget->setClient(nullptr);
         }
+
+        // Reset unread badge for this connection
+        m_unreadCounts[connectionId] = 0;
+        m_connectionPanel->clearUnreadCount(connectionId);
+
+        // Refresh per-connection panels
+        refreshCommandPanel(connectionId);
+        refreshScriptList(connectionId);
 
         // Load subscriptions for this connection
         QList<SubscriptionConfig> subs = m_db.loadSubscriptions(connectionId);
@@ -647,7 +714,9 @@ void MainWindow::onAddSubscription()
     // Subscribe immediately if connected
     if (m_clients.contains(m_activeConnectionId) &&
         m_clients[m_activeConnectionId]->isConnected()) {
-        m_clients[m_activeConnectionId]->subscribe(topic, 0);
+        MqttClient *client = m_clients[m_activeConnectionId];
+        QMetaObject::invokeMethod(client, "subscribe", Qt::QueuedConnection,
+                                  Q_ARG(QString, topic), Q_ARG(int, 0));
     }
     showToast("已订阅：" + topic);
 }
@@ -659,7 +728,9 @@ void MainWindow::onUnsubscribeRequested(const QString &topic, int id)
 
     if (m_clients.contains(m_activeConnectionId) &&
         m_clients[m_activeConnectionId]->isConnected()) {
-        m_clients[m_activeConnectionId]->unsubscribe(topic);
+        MqttClient *client = m_clients[m_activeConnectionId];
+        QMetaObject::invokeMethod(client, "unsubscribe", Qt::QueuedConnection,
+                                  Q_ARG(QString, topic));
     }
     showToast("已取消订阅：" + topic);
 }
@@ -685,7 +756,7 @@ void MainWindow::onAddCommand()
     }
     cmd.id = id;
     m_commands[id] = cmd;
-    m_commandPanel->addCommand(cmd);
+    refreshCommandPanel(m_activeConnectionId);
     showToast("命令已添加：" + cmd.name);
 }
 
@@ -699,7 +770,7 @@ void MainWindow::onEditCommand(int commandId)
     updated.connectionId = m_commands[commandId].connectionId;
     m_db.updateCommand(updated);
     m_commands[commandId] = updated;
-    m_commandPanel->updateCommand(updated);
+    refreshCommandPanel(m_activeConnectionId);
     showToast("命令已更新");
 }
 
@@ -710,7 +781,7 @@ void MainWindow::onDeleteCommand(int commandId)
     if (ret != QMessageBox::Yes) return;
     m_db.deleteCommand(commandId);
     m_commands.remove(commandId);
-    m_commandPanel->removeCommand(commandId);
+    refreshCommandPanel(m_activeConnectionId);
     showToast("命令已删除");
 }
 
@@ -736,7 +807,7 @@ void MainWindow::onAddScript()
     script.id = id;
     m_scripts[id] = script;
     m_scriptEngine.addScript(script);
-    refreshScriptList();
+    refreshScriptList(m_activeConnectionId);
     showToast("脚本已添加：" + script.name);
 }
 
@@ -751,7 +822,7 @@ void MainWindow::onEditScript(int scriptId)
     m_db.updateScript(updated);
     m_scripts[scriptId]      = updated;
     m_scriptEngine.updateScript(updated);
-    refreshScriptList();
+    refreshScriptList(m_activeConnectionId);
     showToast("脚本已更新");
 }
 
@@ -763,7 +834,7 @@ void MainWindow::onDeleteScript(int scriptId)
     m_db.deleteScript(scriptId);
     m_scripts.remove(scriptId);
     m_scriptEngine.removeScript(scriptId);
-    refreshScriptList();
+    refreshScriptList(m_activeConnectionId);
     showToast("脚本已删除");
 }
 
@@ -793,7 +864,9 @@ void MainWindow::onSendRequested(const QString &topic, const QString &payload)
         showToast("请先连接到 MQTT 服务器");
         return;
     }
-    client->publish(topic, payload);
+    QMetaObject::invokeMethod(client, "publish", Qt::QueuedConnection,
+                              Q_ARG(QString, topic), Q_ARG(QString, payload),
+                              Q_ARG(int, 0), Q_ARG(bool, false));
     saveAndDisplayMessage(topic, payload, true, m_activeConnectionId);
 }
 
@@ -808,7 +881,8 @@ void MainWindow::onSubscribeRequested(const QString &topic)
         showToast("请先连接到 MQTT 服务器");
         return;
     }
-    client->subscribe(topic, 0);
+    QMetaObject::invokeMethod(client, "subscribe", Qt::QueuedConnection,
+                              Q_ARG(QString, topic), Q_ARG(int, 0));
 
     // Persist to DB if not already saved
     QList<SubscriptionConfig> existing = m_db.loadSubscriptions(m_activeConnectionId);
@@ -835,17 +909,21 @@ void MainWindow::onSubscribeRequested(const QString &topic)
 // ──────────────────────────────────────────────
 
 void MainWindow::saveAndDisplayMessage(const QString &topic, const QString &payload,
-                                       bool outgoing, int connectionId)
+                                       bool outgoing, int connectionId, bool retained)
 {
     MessageRecord msg;
     msg.connectionId = connectionId;
     msg.topic        = topic;
     msg.payload      = payload;
     msg.outgoing     = outgoing;
+    msg.retained     = retained;
     msg.timestamp    = QDateTime::currentDateTime();
 
-    int id = m_db.saveMessage(msg);
-    msg.id = id;
+    // Do not persist retained messages to avoid duplicate history on reconnect
+    if (!retained) {
+        int id = m_db.saveMessage(msg);
+        msg.id = id;
+    }
 
     m_chatWidget->addMessage(msg);
     addMessageToMonitor(msg);
@@ -897,6 +975,8 @@ void MainWindow::onClearHistoryRequested(int connectionId)
 {
     if (connectionId >= 0)
         m_db.deleteMessages(connectionId);
+    // Also clear the monitor table so it reflects the cleared state
+    m_monitorTable->setRowCount(0);
     showToast("聊天记录已清除");
 }
 

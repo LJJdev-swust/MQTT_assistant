@@ -16,7 +16,8 @@ SOURCES += \
     src/ui/widgets/messagebubbleitem.cpp \
     src/ui/widgets/connectionpanel.cpp \
     src/ui/widgets/commandpanel.cpp \
-    src/ui/widgets/subscriptionpanel.cpp
+    src/ui/widgets/subscriptionpanel.cpp \
+    src/ui/widgets/collapsiblesection.cpp
 
 HEADERS += \
     src/core/models.h \
@@ -31,7 +32,8 @@ HEADERS += \
     src/ui/widgets/messagebubbleitem.h \
     src/ui/widgets/connectionpanel.h \
     src/ui/widgets/commandpanel.h \
-    src/ui/widgets/subscriptionpanel.h
+    src/ui/widgets/subscriptionpanel.h \
+    src/ui/widgets/collapsiblesection.h
 
 RESOURCES += resources/resources.qrc
 

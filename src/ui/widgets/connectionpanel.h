@@ -19,6 +19,8 @@ public:
     void removeConnection(int id);
     void setConnected(int id, bool connected);
     void setLoading(int id, bool loading);
+    void setUnreadCount(int id, int count);
+    void clearUnreadCount(int id);
     void clearConnections();
 
     int selectedConnectionId() const;
@@ -41,6 +43,7 @@ private:
     QMap<int, bool>    m_connectedState;  // connectionId -> isConnected
     QMap<int, bool>    m_loadingState;    // connectionId -> isLoading
     QMap<int, int>     m_spinnerFrame;    // connectionId -> frame index
+    QMap<int, int>     m_unreadCount;     // connectionId -> unread message count
     QTimer            *m_spinnerTimer;
 
     static const char *kSpinnerFrames[];
