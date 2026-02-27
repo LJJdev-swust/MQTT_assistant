@@ -19,21 +19,6 @@ ChatWidget::ChatWidget(QWidget *parent)
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    // ---- Header bar with clear button ----
-    QWidget *headerBar = new QWidget(this);
-    headerBar->setObjectName("chatHeaderBar");
-    headerBar->setFixedHeight(32);
-    QHBoxLayout *headerLayout = new QHBoxLayout(headerBar);
-    headerLayout->setContentsMargins(8, 0, 8, 0);
-    headerLayout->setSpacing(4);
-    headerLayout->addStretch();
-    QPushButton *clearBtn = new QPushButton("清除", headerBar);
-    clearBtn->setObjectName("btnClearChat");
-    clearBtn->setFixedSize(60, 24);
-    clearBtn->setToolTip("清除聊天记录");
-    headerLayout->addWidget(clearBtn);
-    mainLayout->addWidget(headerBar);
-
     // ---- Splitter: messages (top) / input (bottom) ----
     m_splitter = new QSplitter(Qt::Vertical, this);
     m_splitter->setHandleWidth(5);
@@ -90,7 +75,7 @@ ChatWidget::ChatWidget(QWidget *parent)
     m_payloadEdit->setPlaceholderText("输入消息内容...");
     m_sendBtn = new QPushButton("发送", inputArea);
     m_sendBtn->setFixedWidth(70);
-    m_sendBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    m_sendBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     payloadRow->addWidget(m_payloadEdit);
     payloadRow->addWidget(m_sendBtn);
@@ -109,7 +94,6 @@ ChatWidget::ChatWidget(QWidget *parent)
 
     connect(m_sendBtn,      &QPushButton::clicked, this, &ChatWidget::onSendClicked);
     connect(m_subscribeBtn, &QPushButton::clicked, this, &ChatWidget::onSubscribeClicked);
-    connect(clearBtn,       &QPushButton::clicked, this, &ChatWidget::onClearClicked);
 
     loadTopicHistory();
 }

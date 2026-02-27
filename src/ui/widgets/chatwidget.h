@@ -35,10 +35,12 @@ signals:
     void subscribeRequested(const QString &topic);
     void clearHistoryRequested(int connectionId); // emitted when user wants DB clear
 
+public slots:
+    void onClearClicked();
+
 private slots:
     void onSendClicked();
     void onSubscribeClicked();
-    void onClearClicked();
     void scrollToBottom();
 
 private:
