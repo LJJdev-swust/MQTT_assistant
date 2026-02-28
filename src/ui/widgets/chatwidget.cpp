@@ -127,8 +127,18 @@ void ChatWidget::clearMessages()
 void ChatWidget::loadMessages(const QList<MessageRecord> &messages)
 {
     clearMessages();
-    for (const MessageRecord &msg : messages)
-        addMessage(msg);
+    if (messages.isEmpty())
+        return;
+    // All records in a batch share the same connection ID; set it once.
+    m_connectionId = messages.first().connectionId;
+    // Batch-insert all bubbles with updates suspended to avoid per-item repaints
+    m_messagesContainer->setUpdatesEnabled(false);
+    for (const MessageRecord &msg : messages) {
+        MessageBubbleItem *bubble = new MessageBubbleItem(msg, m_messagesContainer);
+        m_messagesLayout->insertWidget(m_messagesLayout->count() - 1, bubble);
+    }
+    m_messagesContainer->setUpdatesEnabled(true);
+    QTimer::singleShot(50, this, &ChatWidget::scrollToBottom);
 }
 
 void ChatWidget::onSendClicked()

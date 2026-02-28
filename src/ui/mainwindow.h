@@ -11,6 +11,7 @@
 #include <QMap>
 #include <QTimer>
 #include <QThread>
+#include <QFutureWatcher>
 
 #include "core/models.h"
 #include "core/mqttclient.h"
@@ -83,6 +84,7 @@ private:
     bool promptForDatabasePath();
     void saveDatabasePathToSettings(const QString &path);
     QString loadDatabasePathFromSettings();
+    void loadMessagesAsync(int connectionId);
 
     MqttClient      *clientForId(int connectionId);
     MqttConnectionConfig configForId(int connectionId) const;

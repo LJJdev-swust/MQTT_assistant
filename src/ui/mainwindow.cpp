@@ -27,6 +27,10 @@
 #include <QDialog>
 #include <QTextEdit>
 #include <QDialogButtonBox>
+#include <QtConcurrent>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QUuid>
 
 // ──────────────────────────────────────────────
 //  Construction
@@ -738,13 +742,8 @@ void MainWindow::onConnectRequested(int connectionId)
     refreshCommandPanel(connectionId);
     refreshScriptList(connectionId);
 
-    // Load message history
-    QList<MessageRecord> history = m_db.loadMessages(connectionId, 100);
-    m_chatWidget->loadMessages(history);
-
-    m_monitorTable->setRowCount(0);
-    for (const MessageRecord &msg : history)
-        addMessageToMonitor(msg);
+    // Load message history asynchronously to keep the UI responsive
+    loadMessagesAsync(connectionId);
 }
 
 void MainWindow::onDisconnectRequested(int connectionId)
@@ -801,12 +800,8 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
         QList<SubscriptionConfig> subs = m_db.loadSubscriptions(connectionId);
         m_subscriptionPanel->loadSubscriptions(subs);
 
-        // Load message history
-        QList<MessageRecord> history = m_db.loadMessages(connectionId, 100);
-        m_chatWidget->loadMessages(history);
-        m_monitorTable->setRowCount(0);
-        for (const MessageRecord &msg : history)
-            addMessageToMonitor(msg);
+        // Load message history asynchronously to keep the UI responsive
+        loadMessagesAsync(connectionId);
     }
 }
 
@@ -1117,6 +1112,84 @@ void MainWindow::onClearHistoryRequested(int connectionId)
     // Also clear the monitor table so it reflects the cleared state
     m_monitorTable->setRowCount(0);
     showToast("聊天记录已清除");
+}
+
+// ──────────────────────────────────────────────
+//  Async Message Loading (background thread)
+// ──────────────────────────────────────────────
+
+void MainWindow::loadMessagesAsync(int connectionId)
+{
+    // Immediately clear display and set the connection ID so that the
+    // "clear history" checkbox works even before messages finish loading.
+    m_chatWidget->setConnectionId(connectionId);
+    m_chatWidget->clearMessages();
+    m_monitorTable->setRowCount(0);
+
+    const QString dbPath = m_db.databasePath();
+
+    auto *watcher = new QFutureWatcher<QList<MessageRecord>>(this);
+    connect(watcher, &QFutureWatcher<QList<MessageRecord>>::finished, this,
+            [this, connectionId, watcher]() {
+                watcher->deleteLater();
+                // Discard result if the user has already switched away
+                if (m_activeConnectionId != connectionId) {
+                    qDebug() << "loadMessagesAsync: stale result for connection"
+                             << connectionId << "discarded (active ="
+                             << m_activeConnectionId << ")";
+                    return;
+                }
+                const QList<MessageRecord> history = watcher->result();
+                m_chatWidget->loadMessages(history);
+                for (const MessageRecord &msg : history)
+                    addMessageToMonitor(msg);
+            });
+
+    QFuture<QList<MessageRecord>> future = QtConcurrent::run(
+        [dbPath, connectionId]() -> QList<MessageRecord> {
+            // Open a separate, uniquely-named SQLite connection so this
+            // thread-pool thread does not conflict with the main-thread
+            // DatabaseManager instance (QSqlDatabase connections are
+            // per-thread and cannot be shared). The inline SQL mirrors
+            // DatabaseManager::loadMessages intentionally.
+            // Note: the 'retained' column does not exist in the schema, so
+            // the field stays at its default value of false.
+            const QString connName =
+                QStringLiteral("mqtt_load_") +
+                QUuid::createUuid().toString(QUuid::WithoutBraces);
+            QList<MessageRecord> result;
+            {
+                QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", connName);
+                db.setDatabaseName(dbPath);
+                if (db.open()) {
+                    QSqlQuery q(db);
+                    q.prepare(
+                        "SELECT id,connection_id,topic,payload,outgoing,timestamp "
+                        "FROM messages WHERE connection_id=:connid "
+                        "ORDER BY id DESC LIMIT 100");
+                    q.bindValue(":connid", connectionId);
+                    if (q.exec()) {
+                        while (q.next()) {
+                            MessageRecord m;
+                            m.id           = q.value(0).toInt();
+                            m.connectionId = q.value(1).toInt();
+                            m.topic        = q.value(2).toString();
+                            m.payload      = q.value(3).toString();
+                            m.outgoing     = q.value(4).toBool();
+                            m.retained     = false;
+                            m.timestamp    = QDateTime::fromString(
+                                q.value(5).toString(), Qt::ISODate);
+                            result.prepend(m);
+                        }
+                    }
+                    db.close();
+                }
+            }
+            QSqlDatabase::removeDatabase(connName);
+            return result;
+        });
+
+    watcher->setFuture(future);
 }
 
 // ──────────────────────────────────────────────

@@ -1,4 +1,4 @@
-QT += core gui widgets sql network mqtt
+QT += core gui widgets sql network mqtt concurrent
 DEFINES += QT_SSL_USE_OPENSSL
 TARGET = MQTT_assistant
 TEMPLATE = app
