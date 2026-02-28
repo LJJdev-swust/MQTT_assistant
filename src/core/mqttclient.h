@@ -24,6 +24,7 @@ public:
     explicit MqttClient(QObject *parent = nullptr);
     ~MqttClient();
 
+    Q_INVOKABLE void init();
     Q_INVOKABLE void connectToHost(const MqttConnectionConfig &config);
     Q_INVOKABLE void disconnectFromHost();
     Q_INVOKABLE void publish(const QString &topic, const QString &payload, int qos = 0, bool retain = false);
