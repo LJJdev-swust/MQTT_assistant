@@ -86,39 +86,44 @@ private:
     void saveDatabasePathToSettings(const QString &path);
     QString loadDatabasePathFromSettings();
     void loadMessagesAsync(int connectionId);
+    void loadOlderMessagesAsync(int connectionId, int oldestId);
+    // Refresh the received-message count label from the DB (runs async)
+    void refreshReceivedCountAsync(int connectionId);
 
-    MqttClient      *clientForId(int connectionId);
+    MqttClient *clientForId(int connectionId);
     MqttConnectionConfig configForId(int connectionId) const;
-    CommandConfig    commandConfigForId(int commandId) const;
-    ScriptConfig     scriptConfigForId(int scriptId) const;
+    CommandConfig commandConfigForId(int commandId) const;
+    ScriptConfig scriptConfigForId(int scriptId) const;
 
     // Data
-    DatabaseManager  m_db;
+    DatabaseManager m_db;
     QMap<int, MqttConnectionConfig> m_connections; // id -> config
-    QMap<int, CommandConfig>        m_commands;    // id -> config
-    QMap<int, ScriptConfig>         m_scripts;     // id -> config
-    QMap<int, MqttClient*>          m_clients;     // connectionId -> client
-    QMap<int, QThread*>             m_clientThreads; // connectionId -> thread
-    QMap<int, int>                  m_unreadCounts;  // connectionId -> unread count
-    QMap<int, QDateTime>            m_chatClearedAt; // connectionId -> clear time
-    ScriptEngine                    m_scriptEngine;
+    QMap<int, CommandConfig> m_commands;           // id -> config
+    QMap<int, ScriptConfig> m_scripts;             // id -> config
+    QMap<int, MqttClient *> m_clients;             // connectionId -> client
+    QMap<int, QThread *> m_clientThreads;          // connectionId -> thread
+    QMap<int, int> m_unreadCounts;                 // connectionId -> unread count
+    QMap<int, QDateTime> m_chatClearedAt;          // connectionId -> clear time
+    ScriptEngine m_scriptEngine;
 
     int m_activeConnectionId;
 
     // UI widgets
-    ConnectionPanel   *m_connectionPanel;
+    ConnectionPanel *m_connectionPanel;
     SubscriptionPanel *m_subscriptionPanel;
-    CommandPanel      *m_commandPanel;
-    QListWidget       *m_scriptList;
-    ChatWidget        *m_chatWidget;
-    QTableWidget      *m_monitorTable;
-    QTabWidget        *m_tabWidget;
-    QLabel            *m_statusLabel;
-    QLabel            *m_titleLabel;
+    CommandPanel *m_commandPanel;
+    QListWidget *m_scriptList;
+    ChatWidget *m_chatWidget;
+    QTableWidget *m_monitorTable;
+    QTabWidget *m_tabWidget;
+    QLabel *m_statusLabel;
+    QLabel *m_titleLabel;
+    QLabel *m_monitorCountLabel; // shows total received message count
+    qint64 m_receivedMsgCount;   // in-memory count for the active connection
 
     // Toast
-    QLabel  *m_toastLabel;
-    QTimer  *m_toastTimer;
+    QLabel *m_toastLabel;
+    QTimer *m_toastTimer;
 };
 
 #endif // MAINWINDOW_H

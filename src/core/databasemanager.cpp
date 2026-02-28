@@ -19,29 +19,34 @@ DatabaseManager::~DatabaseManager()
 bool DatabaseManager::open(const QString &dbPath)
 {
     QString path = dbPath;
-    if (path.isEmpty()) {
+    if (path.isEmpty())
+    {
         QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         QDir().mkpath(dataDir);
         path = dataDir + "/mqtt_assistant.db";
-    } else {
+    }
+    else
+    {
         QDir().mkpath(QFileInfo(path).absolutePath());
     }
 
     // 关键修复：如果已经存在同名连接，先关闭并移除它
     QString connectionName = "mqtt_assistant_db";
-    if (QSqlDatabase::contains(connectionName)) {
+    if (QSqlDatabase::contains(connectionName))
+    {
         // Close and invalidate m_db before removing so Qt doesn't warn
         // about a connection still in use.
         if (m_db.isOpen())
             m_db.close();
-        m_db = QSqlDatabase();          // release the reference
+        m_db = QSqlDatabase(); // release the reference
         QSqlDatabase::removeDatabase(connectionName);
     }
 
     m_db = QSqlDatabase::addDatabase("QSQLITE", connectionName);
     m_db.setDatabaseName(path);
 
-    if (!m_db.open()) {
+    if (!m_db.open())
+    {
         qWarning() << "Failed to open database:" << m_db.lastError().text();
         Logger::error("DB", "数据库打开失败: " + m_db.lastError().text());
         return false;
@@ -81,9 +86,12 @@ bool DatabaseManager::createTables()
         "client_key_path TEXT,"
         "clean_session INTEGER NOT NULL DEFAULT 1,"
         "keep_alive INTEGER NOT NULL DEFAULT 60"
-        ")"
-        );
-    if (!ok) { qWarning() << q.lastError().text(); return false; }
+        ")");
+    if (!ok)
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
 
     ok = q.exec(
         "CREATE TABLE IF NOT EXISTS commands ("
@@ -96,9 +104,12 @@ bool DatabaseManager::createTables()
         "loop_enabled INTEGER NOT NULL DEFAULT 0,"
         "loop_interval_ms INTEGER NOT NULL DEFAULT 1000,"
         "connection_id INTEGER NOT NULL DEFAULT -1"
-        ")"
-        );
-    if (!ok) { qWarning() << q.lastError().text(); return false; }
+        ")");
+    if (!ok)
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
 
     ok = q.exec(
         "CREATE TABLE IF NOT EXISTS scripts ("
@@ -114,9 +125,12 @@ bool DatabaseManager::createTables()
         "response_retain INTEGER NOT NULL DEFAULT 0,"
         "delay_ms INTEGER NOT NULL DEFAULT 0,"
         "connection_id INTEGER NOT NULL DEFAULT -1"
-        ")"
-        );
-    if (!ok) { qWarning() << q.lastError().text(); return false; }
+        ")");
+    if (!ok)
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
 
     ok = q.exec(
         "CREATE TABLE IF NOT EXISTS subscriptions ("
@@ -124,9 +138,12 @@ bool DatabaseManager::createTables()
         "connection_id INTEGER NOT NULL,"
         "topic TEXT NOT NULL,"
         "qos INTEGER NOT NULL DEFAULT 0"
-        ")"
-        );
-    if (!ok) { qWarning() << q.lastError().text(); return false; }
+        ")");
+    if (!ok)
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
 
     ok = q.exec(
         "CREATE TABLE IF NOT EXISTS messages ("
@@ -137,9 +154,12 @@ bool DatabaseManager::createTables()
         "outgoing INTEGER NOT NULL DEFAULT 0,"
         "timestamp TEXT NOT NULL,"
         "data_type INTEGER NOT NULL DEFAULT 0"
-        ")"
-        );
-    if (!ok) { qWarning() << q.lastError().text(); return false; }
+        ")");
+    if (!ok)
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
 
     return true;
 }
@@ -165,59 +185,93 @@ bool DatabaseManager::applyMigrations()
 {
     int currentVersion = schemaVersion();
     Logger::info("DB", QString("当前数据库版本: %1，最新版本: %2")
-                           .arg(currentVersion).arg(kLatestSchemaVersion));
+                           .arg(currentVersion)
+                           .arg(kLatestSchemaVersion));
 
-    if (currentVersion >= kLatestSchemaVersion) {
+    if (currentVersion >= kLatestSchemaVersion)
+    {
         Logger::debug("DB", "数据库已是最新版本，无需迁移");
         return true;
     }
 
     // ── Migration v0 → v1 ────────────────────────────────────────────────────
     // 修复：旧版 messages 表缺少 data_type 字段，导致切换连接时聊天记录丢失。
-    if (currentVersion < 1) {
+    if (currentVersion < 1)
+    {
         Logger::info("DB", "执行迁移 v0 → v1：检查并补充 messages.data_type 字段");
 
         // 检查 data_type 列是否已存在（SQLite 不支持 ADD COLUMN IF NOT EXISTS）
         bool colExists = false;
         QSqlQuery pragma(m_db);
-        if (pragma.exec("PRAGMA table_info(messages)")) {
-            while (pragma.next()) {
-                if (pragma.value(1).toString() == "data_type") {
+        if (pragma.exec("PRAGMA table_info(messages)"))
+        {
+            while (pragma.next())
+            {
+                if (pragma.value(1).toString() == "data_type")
+                {
                     colExists = true;
                     break;
                 }
             }
         }
 
-        if (!colExists) {
+        if (!colExists)
+        {
             QSqlQuery alter(m_db);
             if (!alter.exec(
-                    "ALTER TABLE messages ADD COLUMN data_type INTEGER NOT NULL DEFAULT 0")) {
+                    "ALTER TABLE messages ADD COLUMN data_type INTEGER NOT NULL DEFAULT 0"))
+            {
                 Logger::error("DB", "迁移失败：无法添加 data_type 列: " +
                                         alter.lastError().text());
                 return false;
             }
             Logger::info("DB", "迁移 v0→v1 成功：已添加 messages.data_type 列");
-        } else {
+        }
+        else
+        {
             Logger::debug("DB", "迁移 v0→v1：data_type 列已存在，跳过 ALTER TABLE");
         }
 
-        if (!setSchemaVersion(1)) {
+        if (!setSchemaVersion(1))
+        {
             Logger::error("DB", "无法更新 PRAGMA user_version");
             return false;
         }
         currentVersion = 1;
     }
 
-    // ── 在此处追加未来的迁移块 ─────────────────────────────────────────────
-    // if (currentVersion < 2) {
-    //     Logger::info("DB", "执行迁移 v1 → v2：…");
-    //     // ... SQL ...
-    //     setSchemaVersion(2);
-    //     currentVersion = 2;
-    // }
-    // ──────────────────────────────────────────────────────────────────────────
+    // ── Migration v1 → v2 ────────────────────────────────────────────────────
+    // 为 messages 表的 connection_id 列建立索引，使 COUNT(*) 和分页查询在万条数据
+    // 下仍保持 O(log n) 而非全表扫描 O(n)。
+    // IF NOT EXISTS 语法保证重复执行安全。
+    if (currentVersion < 2)
+    {
+        Logger::info("DB", "执行迁移 v1 → v2：为 messages 表建立 connection_id 索引");
+        QSqlQuery idx(m_db);
+        if (!idx.exec(
+                "CREATE INDEX IF NOT EXISTS idx_messages_connection_id "
+                "ON messages(connection_id)"))
+        {
+            Logger::error("DB", "迁移 v1→v2 失败：无法建立索引: " + idx.lastError().text());
+            return false;
+        }
+        // 同时建立复合索引，覆盖 COUNT(outgoing=0) 和分页查询
+        idx.exec(
+            "CREATE INDEX IF NOT EXISTS idx_messages_conn_out_id "
+            "ON messages(connection_id, outgoing, id)");
 
+        if (!setSchemaVersion(2))
+        {
+            Logger::error("DB", "无法更新 PRAGMA user_version 到 2");
+            return false;
+        }
+        Logger::info("DB", "迁移 v1→v2 完成：messages 索引已创建");
+        currentVersion = 2;
+    }
+
+    // ── 在此处追加未来的迁移块 ─────────────────────────────────────────────
+    // if (currentVersion < 3) { ... setSchemaVersion(3); currentVersion = 3; }
+    // ──────────────────────────────────────────────────────────────────────────
     Logger::info("DB", QString("数据库迁移完成，版本已提升至 %1").arg(currentVersion));
     return true;
 }
@@ -233,21 +287,22 @@ QList<MqttConnectionConfig> DatabaseManager::loadConnections()
     q.exec("SELECT id,name,host,port,username,password,client_id,"
            "use_tls,ca_cert_path,client_cert_path,client_key_path,"
            "clean_session,keep_alive FROM connections ORDER BY id");
-    while (q.next()) {
+    while (q.next())
+    {
         MqttConnectionConfig c;
-        c.id              = q.value(0).toInt();
-        c.name            = q.value(1).toString();
-        c.host            = q.value(2).toString();
-        c.port            = q.value(3).toInt();
-        c.username        = q.value(4).toString();
-        c.password        = q.value(5).toString();
-        c.clientId        = q.value(6).toString();
-        c.useTLS          = q.value(7).toBool();
-        c.caCertPath      = q.value(8).toString();
-        c.clientCertPath  = q.value(9).toString();
-        c.clientKeyPath   = q.value(10).toString();
-        c.cleanSession    = q.value(11).toBool();
-        c.keepAlive       = q.value(12).toInt();
+        c.id = q.value(0).toInt();
+        c.name = q.value(1).toString();
+        c.host = q.value(2).toString();
+        c.port = q.value(3).toInt();
+        c.username = q.value(4).toString();
+        c.password = q.value(5).toString();
+        c.clientId = q.value(6).toString();
+        c.useTLS = q.value(7).toBool();
+        c.caCertPath = q.value(8).toString();
+        c.clientCertPath = q.value(9).toString();
+        c.clientKeyPath = q.value(10).toString();
+        c.cleanSession = q.value(11).toBool();
+        c.keepAlive = q.value(12).toInt();
         list.append(c);
     }
     return list;
@@ -264,14 +319,18 @@ int DatabaseManager::saveConnection(const MqttConnectionConfig &config)
     q.bindValue(":port", config.port);
     q.bindValue(":user", config.username);
     q.bindValue(":pass", config.password);
-    q.bindValue(":cid",  config.clientId);
-    q.bindValue(":tls",  config.useTLS ? 1 : 0);
-    q.bindValue(":ca",   config.caCertPath);
-    q.bindValue(":cc",   config.clientCertPath);
-    q.bindValue(":ck",   config.clientKeyPath);
-    q.bindValue(":cs",   config.cleanSession ? 1 : 0);
-    q.bindValue(":ka",   config.keepAlive);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return -1; }
+    q.bindValue(":cid", config.clientId);
+    q.bindValue(":tls", config.useTLS ? 1 : 0);
+    q.bindValue(":ca", config.caCertPath);
+    q.bindValue(":cc", config.clientCertPath);
+    q.bindValue(":ck", config.clientKeyPath);
+    q.bindValue(":cs", config.cleanSession ? 1 : 0);
+    q.bindValue(":ka", config.keepAlive);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return -1;
+    }
     return q.lastInsertId().toInt();
 }
 
@@ -287,15 +346,19 @@ bool DatabaseManager::updateConnection(const MqttConnectionConfig &config)
     q.bindValue(":port", config.port);
     q.bindValue(":user", config.username);
     q.bindValue(":pass", config.password);
-    q.bindValue(":cid",  config.clientId);
-    q.bindValue(":tls",  config.useTLS ? 1 : 0);
-    q.bindValue(":ca",   config.caCertPath);
-    q.bindValue(":cc",   config.clientCertPath);
-    q.bindValue(":ck",   config.clientKeyPath);
-    q.bindValue(":cs",   config.cleanSession ? 1 : 0);
-    q.bindValue(":ka",   config.keepAlive);
-    q.bindValue(":id",   config.id);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return false; }
+    q.bindValue(":cid", config.clientId);
+    q.bindValue(":tls", config.useTLS ? 1 : 0);
+    q.bindValue(":ca", config.caCertPath);
+    q.bindValue(":cc", config.clientCertPath);
+    q.bindValue(":ck", config.clientKeyPath);
+    q.bindValue(":cs", config.cleanSession ? 1 : 0);
+    q.bindValue(":ka", config.keepAlive);
+    q.bindValue(":id", config.id);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
     return true;
 }
 
@@ -315,17 +378,18 @@ QList<CommandConfig> DatabaseManager::loadCommands()
     QSqlQuery q(m_db);
     q.exec("SELECT id,name,topic,payload,qos,retain,loop_enabled,loop_interval_ms,connection_id "
            "FROM commands ORDER BY id");
-    while (q.next()) {
+    while (q.next())
+    {
         CommandConfig c;
-        c.id             = q.value(0).toInt();
-        c.name           = q.value(1).toString();
-        c.topic          = q.value(2).toString();
-        c.payload        = q.value(3).toString();
-        c.qos            = q.value(4).toInt();
-        c.retain         = q.value(5).toBool();
-        c.loopEnabled    = q.value(6).toBool();
+        c.id = q.value(0).toInt();
+        c.name = q.value(1).toString();
+        c.topic = q.value(2).toString();
+        c.payload = q.value(3).toString();
+        c.qos = q.value(4).toInt();
+        c.retain = q.value(5).toBool();
+        c.loopEnabled = q.value(6).toBool();
         c.loopIntervalMs = q.value(7).toInt();
-        c.connectionId   = q.value(8).toInt();
+        c.connectionId = q.value(8).toInt();
         list.append(c);
     }
     return list;
@@ -336,15 +400,19 @@ int DatabaseManager::saveCommand(const CommandConfig &cmd)
     QSqlQuery q(m_db);
     q.prepare("INSERT INTO commands (name,topic,payload,qos,retain,loop_enabled,loop_interval_ms,connection_id) "
               "VALUES (:name,:topic,:payload,:qos,:retain,:loop,:interval,:connid)");
-    q.bindValue(":name",     cmd.name);
-    q.bindValue(":topic",    cmd.topic);
-    q.bindValue(":payload",  cmd.payload);
-    q.bindValue(":qos",      cmd.qos);
-    q.bindValue(":retain",   cmd.retain ? 1 : 0);
-    q.bindValue(":loop",     cmd.loopEnabled ? 1 : 0);
+    q.bindValue(":name", cmd.name);
+    q.bindValue(":topic", cmd.topic);
+    q.bindValue(":payload", cmd.payload);
+    q.bindValue(":qos", cmd.qos);
+    q.bindValue(":retain", cmd.retain ? 1 : 0);
+    q.bindValue(":loop", cmd.loopEnabled ? 1 : 0);
     q.bindValue(":interval", cmd.loopIntervalMs);
-    q.bindValue(":connid",   cmd.connectionId);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return -1; }
+    q.bindValue(":connid", cmd.connectionId);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return -1;
+    }
     return q.lastInsertId().toInt();
 }
 
@@ -354,16 +422,20 @@ bool DatabaseManager::updateCommand(const CommandConfig &cmd)
     q.prepare("UPDATE commands SET name=:name,topic=:topic,payload=:payload,qos=:qos,"
               "retain=:retain,loop_enabled=:loop,loop_interval_ms=:interval,connection_id=:connid "
               "WHERE id=:id");
-    q.bindValue(":name",     cmd.name);
-    q.bindValue(":topic",    cmd.topic);
-    q.bindValue(":payload",  cmd.payload);
-    q.bindValue(":qos",      cmd.qos);
-    q.bindValue(":retain",   cmd.retain ? 1 : 0);
-    q.bindValue(":loop",     cmd.loopEnabled ? 1 : 0);
+    q.bindValue(":name", cmd.name);
+    q.bindValue(":topic", cmd.topic);
+    q.bindValue(":payload", cmd.payload);
+    q.bindValue(":qos", cmd.qos);
+    q.bindValue(":retain", cmd.retain ? 1 : 0);
+    q.bindValue(":loop", cmd.loopEnabled ? 1 : 0);
     q.bindValue(":interval", cmd.loopIntervalMs);
-    q.bindValue(":connid",   cmd.connectionId);
-    q.bindValue(":id",       cmd.id);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return false; }
+    q.bindValue(":connid", cmd.connectionId);
+    q.bindValue(":id", cmd.id);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
     return true;
 }
 
@@ -384,20 +456,21 @@ QList<ScriptConfig> DatabaseManager::loadScripts()
     q.exec("SELECT id,name,enabled,trigger_topic,trigger_condition,trigger_value,"
            "response_topic,response_payload,response_qos,response_retain,delay_ms,connection_id "
            "FROM scripts ORDER BY id");
-    while (q.next()) {
+    while (q.next())
+    {
         ScriptConfig s;
-        s.id               = q.value(0).toInt();
-        s.name             = q.value(1).toString();
-        s.enabled          = q.value(2).toBool();
-        s.triggerTopic     = q.value(3).toString();
+        s.id = q.value(0).toInt();
+        s.name = q.value(1).toString();
+        s.enabled = q.value(2).toBool();
+        s.triggerTopic = q.value(3).toString();
         s.triggerCondition = q.value(4).toString();
-        s.triggerValue     = q.value(5).toString();
-        s.responseTopic    = q.value(6).toString();
-        s.responsePayload  = q.value(7).toString();
-        s.responseQos      = q.value(8).toInt();
-        s.responseRetain   = q.value(9).toBool();
-        s.delayMs          = q.value(10).toInt();
-        s.connectionId     = q.value(11).toInt();
+        s.triggerValue = q.value(5).toString();
+        s.responseTopic = q.value(6).toString();
+        s.responsePayload = q.value(7).toString();
+        s.responseQos = q.value(8).toInt();
+        s.responseRetain = q.value(9).toBool();
+        s.delayMs = q.value(10).toInt();
+        s.connectionId = q.value(11).toInt();
         list.append(s);
     }
     return list;
@@ -409,18 +482,22 @@ int DatabaseManager::saveScript(const ScriptConfig &script)
     q.prepare("INSERT INTO scripts (name,enabled,trigger_topic,trigger_condition,trigger_value,"
               "response_topic,response_payload,response_qos,response_retain,delay_ms,connection_id) "
               "VALUES (:name,:enabled,:ttopic,:tcond,:tval,:rtopic,:rpayload,:rqos,:rretain,:delay,:connid)");
-    q.bindValue(":name",     script.name);
-    q.bindValue(":enabled",  script.enabled ? 1 : 0);
-    q.bindValue(":ttopic",   script.triggerTopic);
-    q.bindValue(":tcond",    script.triggerCondition);
-    q.bindValue(":tval",     script.triggerValue);
-    q.bindValue(":rtopic",   script.responseTopic);
+    q.bindValue(":name", script.name);
+    q.bindValue(":enabled", script.enabled ? 1 : 0);
+    q.bindValue(":ttopic", script.triggerTopic);
+    q.bindValue(":tcond", script.triggerCondition);
+    q.bindValue(":tval", script.triggerValue);
+    q.bindValue(":rtopic", script.responseTopic);
     q.bindValue(":rpayload", script.responsePayload);
-    q.bindValue(":rqos",     script.responseQos);
-    q.bindValue(":rretain",  script.responseRetain ? 1 : 0);
-    q.bindValue(":delay",    script.delayMs);
-    q.bindValue(":connid",   script.connectionId);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return -1; }
+    q.bindValue(":rqos", script.responseQos);
+    q.bindValue(":rretain", script.responseRetain ? 1 : 0);
+    q.bindValue(":delay", script.delayMs);
+    q.bindValue(":connid", script.connectionId);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return -1;
+    }
     return q.lastInsertId().toInt();
 }
 
@@ -431,19 +508,23 @@ bool DatabaseManager::updateScript(const ScriptConfig &script)
               "trigger_condition=:tcond,trigger_value=:tval,response_topic=:rtopic,"
               "response_payload=:rpayload,response_qos=:rqos,response_retain=:rretain,"
               "delay_ms=:delay,connection_id=:connid WHERE id=:id");
-    q.bindValue(":name",     script.name);
-    q.bindValue(":enabled",  script.enabled ? 1 : 0);
-    q.bindValue(":ttopic",   script.triggerTopic);
-    q.bindValue(":tcond",    script.triggerCondition);
-    q.bindValue(":tval",     script.triggerValue);
-    q.bindValue(":rtopic",   script.responseTopic);
+    q.bindValue(":name", script.name);
+    q.bindValue(":enabled", script.enabled ? 1 : 0);
+    q.bindValue(":ttopic", script.triggerTopic);
+    q.bindValue(":tcond", script.triggerCondition);
+    q.bindValue(":tval", script.triggerValue);
+    q.bindValue(":rtopic", script.responseTopic);
     q.bindValue(":rpayload", script.responsePayload);
-    q.bindValue(":rqos",     script.responseQos);
-    q.bindValue(":rretain",  script.responseRetain ? 1 : 0);
-    q.bindValue(":delay",    script.delayMs);
-    q.bindValue(":connid",   script.connectionId);
-    q.bindValue(":id",       script.id);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return false; }
+    q.bindValue(":rqos", script.responseQos);
+    q.bindValue(":rretain", script.responseRetain ? 1 : 0);
+    q.bindValue(":delay", script.delayMs);
+    q.bindValue(":connid", script.connectionId);
+    q.bindValue(":id", script.id);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return false;
+    }
     return true;
 }
 
@@ -463,13 +544,18 @@ QList<SubscriptionConfig> DatabaseManager::loadSubscriptions(int connectionId)
     QSqlQuery q(m_db);
     q.prepare("SELECT id,connection_id,topic,qos FROM subscriptions WHERE connection_id=:connid ORDER BY id");
     q.bindValue(":connid", connectionId);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return list; }
-    while (q.next()) {
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return list;
+    }
+    while (q.next())
+    {
         SubscriptionConfig s;
-        s.id           = q.value(0).toInt();
+        s.id = q.value(0).toInt();
         s.connectionId = q.value(1).toInt();
-        s.topic        = q.value(2).toString();
-        s.qos          = q.value(3).toInt();
+        s.topic = q.value(2).toString();
+        s.qos = q.value(3).toInt();
         list.append(s);
     }
     return list;
@@ -480,9 +566,13 @@ int DatabaseManager::saveSubscription(const SubscriptionConfig &sub)
     QSqlQuery q(m_db);
     q.prepare("INSERT INTO subscriptions (connection_id,topic,qos) VALUES (:connid,:topic,:qos)");
     q.bindValue(":connid", sub.connectionId);
-    q.bindValue(":topic",  sub.topic);
-    q.bindValue(":qos",    sub.qos);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return -1; }
+    q.bindValue(":topic", sub.topic);
+    q.bindValue(":qos", sub.qos);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return -1;
+    }
     return q.lastInsertId().toInt();
 }
 
@@ -501,13 +591,17 @@ int DatabaseManager::saveMessage(const MessageRecord &msg)
     QSqlQuery q(m_db);
     q.prepare("INSERT INTO messages (connection_id,topic,payload,outgoing,timestamp,data_type) "
               "VALUES (:connid,:topic,:payload,:out,:ts,:data_type)");
-    q.bindValue(":connid",  msg.connectionId);
-    q.bindValue(":topic",   msg.topic);
+    q.bindValue(":connid", msg.connectionId);
+    q.bindValue(":topic", msg.topic);
     q.bindValue(":payload", msg.payload);
-    q.bindValue(":out",     msg.outgoing ? 1 : 0);
-    q.bindValue(":ts",      msg.timestamp.toString(Qt::ISODate));
-    q.bindValue(":data_type", msg.dataType);  // 新增字段
-    if (!q.exec()) { qWarning() << q.lastError().text(); return -1; }
+    q.bindValue(":out", msg.outgoing ? 1 : 0);
+    q.bindValue(":ts", msg.timestamp.toString(Qt::ISODateWithMs));
+    q.bindValue(":data_type", msg.dataType); // 新增字段
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return -1;
+    }
     return q.lastInsertId().toInt();
 }
 
@@ -515,20 +609,35 @@ QList<MessageRecord> DatabaseManager::loadMessages(int connectionId, int limit)
 {
     QList<MessageRecord> list;
     QSqlQuery q(m_db);
-    q.prepare("SELECT id,connection_id,topic,payload,outgoing,timestamp FROM messages "
+    q.prepare("SELECT id,connection_id,topic,payload,outgoing,timestamp,data_type FROM messages "
               "WHERE connection_id=:connid ORDER BY id DESC LIMIT :lim");
     q.bindValue(":connid", connectionId);
-    q.bindValue(":lim",    limit);
-    if (!q.exec()) { qWarning() << q.lastError().text(); return list; }
+    q.bindValue(":lim", limit);
+    if (!q.exec())
+    {
+        qWarning() << q.lastError().text();
+        return list;
+    }
 
-    while (q.next()) {
+    while (q.next())
+    {
         MessageRecord m;
-        m.id           = q.value(0).toInt();
+        m.id = q.value(0).toInt();
         m.connectionId = q.value(1).toInt();
-        m.topic        = q.value(2).toString();
-        m.payload      = q.value(3).toString();
-        m.outgoing     = q.value(4).toBool();
-        m.timestamp    = QDateTime::fromString(q.value(5).toString(), Qt::ISODate);
+        m.topic = q.value(2).toString();
+        m.payload = q.value(3).toString();
+        m.outgoing = q.value(4).toBool();
+        m.timestamp = QDateTime::fromString(q.value(5).toString(), Qt::ISODateWithMs);
+        // 如果时间戳解析失败（旧格式 ISODate，不含毫秒），再用旧格式重试
+        if (!m.timestamp.isValid())
+            m.timestamp = QDateTime::fromString(q.value(5).toString(), Qt::ISODate);
+        int dataType = q.value(6).toInt();
+        if (dataType == 1 || m.payload.startsWith("HEX: "))
+            m.dataType = Hex;
+        else if (dataType == 2)
+            m.dataType = Json;
+        else
+            m.dataType = Text;
         list.prepend(m);
     }
     return list;
@@ -540,4 +649,15 @@ bool DatabaseManager::deleteMessages(int connectionId)
     q.prepare("DELETE FROM messages WHERE connection_id=:connid");
     q.bindValue(":connid", connectionId);
     return q.exec();
+}
+
+qint64 DatabaseManager::countReceivedMessages(int connectionId)
+{
+    QSqlQuery q(m_db);
+    q.prepare("SELECT COUNT(*) FROM messages "
+              "WHERE connection_id=:connid AND outgoing=0");
+    q.bindValue(":connid", connectionId);
+    if (q.exec() && q.next())
+        return q.value(0).toLongLong();
+    return 0;
 }

@@ -108,6 +108,7 @@ QLineEdit, QSpinBox, QComboBox, QDateTimeEdit {
     border-radius: 4px;
     padding: 4px 8px;
     min-height: 26px;
+    min-width: 56px;
     selection-background-color: #ea5413;
     selection-color: #ffffff;
 }
@@ -447,18 +448,63 @@ QSplitter::handle {
     background-color: #d0d0d0;
 }
 QSplitter::handle:vertical {
-    height: 5px;
-    background-color: #d0d0d0;
-    border-top: 1px solid #c0c0c0;
-    border-bottom: 1px solid #c0c0c0;
+    height: 2px;
+    background-color: transparent;
 }
 QSplitter::handle:vertical:hover {
     background-color: #ea5413;
 }
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 1px;
     background-color: #d0d0d0;
 }
 QSplitter::handle:horizontal:hover {
     background-color: #ea5413;
+}
+
+/* ---------- Scroll to bottom floating button ---------- */
+QPushButton#scrollToBottomBtn {
+    background-color: rgba(30, 30, 46, 0.82);
+    color: #ffffff;
+    border: none;
+    border-radius: 14px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 28px;
+}
+QPushButton#scrollToBottomBtn:hover {
+    background-color: rgba(234, 84, 19, 0.90);
+}
+QPushButton#scrollToBottomBtn:pressed {
+    background-color: rgba(196, 68, 16, 0.95);
+}
+
+/* ---------- 清除按钮 (用于消息标签页右上角) ---------- */
+QPushButton#btnClearChat {
+    background-color: #ea5413;
+    color: #ffffff;
+    border: none;
+    border-radius: 3px;
+    padding: 0px 8px;  /* 减小上下内边距 */
+    font-weight: 600;
+    font-size: 12px;   /* 稍小一点的字体 */
+    min-height: 30px;   /* 覆盖全局的min-height: 28px */
+    max-height: 40px;   /* 限制最大高度 */
+    min-width: 50px;    /* 最小宽度 */
+    max-width: 60px;    /* 最大宽度 */
+}
+QPushButton#btnClearChat:hover {
+    background-color: #f39800;
+}
+QPushButton#btnClearChat:pressed {
+    background-color: #f39800;
+}
+
+QLabel {
+    background-color: transparent;  /* 默认透明 */
+}
+
+QCheckBox {
+    background-color: transparent;  /* 默认透明 */
 }
