@@ -10,6 +10,7 @@
 #include <QSplitter>
 #include <QLineEdit>
 #include <QList>
+#include <QEvent>
 #include "core/models.h"
 
 class MqttClient;
@@ -35,14 +36,23 @@ public:
 signals:
     void sendRequested(const QString &topic, const QString &payload);
     void subscribeRequested(const QString &topic);
-    void clearHistoryRequested(int connectionId); // emitted when user wants DB clear
+    void clearHistoryRequested(int connectionId);    // emitted when user wants DB clear
+    void displayClearedRequested(int connectionId);  // emitted whenever display is cleared
 public slots:
     void onClearClicked();
+    void scrollToBottom();
 
 private slots:
     void onSendClicked();
     void onSubscribeClicked();
-    void scrollToBottom();
+    void onScrollValueChanged(int value);
+
+private:
+    void updateScrollToBottomBtn();
+    void repositionScrollToBottomBtn();
+
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 private:
     QScrollArea  *m_scrollArea;
@@ -54,9 +64,11 @@ private:
     QTextEdit    *m_payloadEdit;
     QPushButton  *m_sendBtn;
     QPushButton  *m_subscribeBtn;
+    QPushButton  *m_scrollToBottomBtn;  // floating "scroll to bottom" button
 
     MqttClient   *m_client;
     int           m_connectionId; // for DB clear
+    int           m_pendingScrollCount; // new messages received while scrolled up
 
     static const int kMaxTopicHistory = 10;
 };

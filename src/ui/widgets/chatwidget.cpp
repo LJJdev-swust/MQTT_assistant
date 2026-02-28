@@ -9,11 +9,13 @@
 #include <QCheckBox>
 #include <QMessageBox>
 #include <QSettings>
+#include <QResizeEvent>
 
 ChatWidget::ChatWidget(QWidget *parent)
     : QWidget(parent)
     , m_client(nullptr)
     , m_connectionId(-1)
+    , m_pendingScrollCount(0)
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -42,6 +44,20 @@ ChatWidget::ChatWidget(QWidget *parent)
 
     m_scrollArea->setWidget(m_messagesContainer);
     m_splitter->addWidget(m_scrollArea);
+
+    // Floating "scroll to bottom" button (parented to scroll area viewport)
+    m_scrollToBottomBtn = new QPushButton("↓ 回到底部", m_scrollArea->viewport());
+    m_scrollToBottomBtn->setObjectName("scrollToBottomBtn");
+    m_scrollToBottomBtn->setCursor(Qt::PointingHandCursor);
+    m_scrollToBottomBtn->adjustSize();
+    m_scrollToBottomBtn->hide();
+
+    // Install event filter on viewport to reposition button on resize
+    m_scrollArea->viewport()->installEventFilter(this);
+
+    connect(m_scrollArea->verticalScrollBar(), &QScrollBar::valueChanged,
+            this, &ChatWidget::onScrollValueChanged);
+    connect(m_scrollToBottomBtn, &QPushButton::clicked, this, &ChatWidget::scrollToBottom);
 
     // Input area
     QWidget *inputArea = new QWidget(m_splitter);
@@ -107,10 +123,20 @@ void ChatWidget::setClient(MqttClient *client)
 void ChatWidget::addMessage(const MessageRecord &msg)
 {
     m_connectionId = msg.connectionId;
+
+    QScrollBar *bar = m_scrollArea->verticalScrollBar();
+    bool wasAtBottom = (bar->maximum() == 0 || bar->value() >= bar->maximum() - 4);
+
     MessageBubbleItem *bubble = new MessageBubbleItem(msg, m_messagesContainer);
     // Insert before the trailing stretch
     m_messagesLayout->insertWidget(m_messagesLayout->count() - 1, bubble);
-    QTimer::singleShot(50, this, &ChatWidget::scrollToBottom);
+
+    if (wasAtBottom) {
+        QTimer::singleShot(50, this, &ChatWidget::scrollToBottom);
+    } else {
+        ++m_pendingScrollCount;
+        updateScrollToBottomBtn();
+    }
 }
 
 void ChatWidget::clearMessages()
@@ -195,6 +221,11 @@ void ChatWidget::onClearClicked()
         return;
 
     clearMessages();
+    m_pendingScrollCount = 0;
+    m_scrollToBottomBtn->hide();
+
+    // Always notify that the display was cleared so MainWindow can track it
+    emit displayClearedRequested(m_connectionId);
 
     if (alsoDeleteCheck->isChecked() && m_connectionId >= 0)
         emit clearHistoryRequested(m_connectionId);
@@ -205,6 +236,53 @@ void ChatWidget::scrollToBottom()
     m_scrollArea->verticalScrollBar()->setValue(
         m_scrollArea->verticalScrollBar()->maximum()
         );
+    m_pendingScrollCount = 0;
+    m_scrollToBottomBtn->hide();
+}
+
+// ─────────────────────────────────────────────────────
+//  Scroll-to-bottom button helpers
+// ─────────────────────────────────────────────────────
+
+void ChatWidget::onScrollValueChanged(int value)
+{
+    QScrollBar *bar = m_scrollArea->verticalScrollBar();
+    if (bar->maximum() == 0 || value >= bar->maximum() - 4) {
+        // User has scrolled to (or is at) the bottom
+        m_pendingScrollCount = 0;
+        m_scrollToBottomBtn->hide();
+    }
+}
+
+void ChatWidget::updateScrollToBottomBtn()
+{
+    if (m_pendingScrollCount > 0) {
+        m_scrollToBottomBtn->setText(
+            QString("↓ %1 条新消息").arg(m_pendingScrollCount));
+    } else {
+        m_scrollToBottomBtn->setText("↓ 回到底部");
+    }
+    m_scrollToBottomBtn->adjustSize();
+    repositionScrollToBottomBtn();
+    m_scrollToBottomBtn->show();
+    m_scrollToBottomBtn->raise();
+}
+
+void ChatWidget::repositionScrollToBottomBtn()
+{
+    QWidget *vp = m_scrollArea->viewport();
+    int x = (vp->width() - m_scrollToBottomBtn->width()) / 2;
+    int y = vp->height() - m_scrollToBottomBtn->height() - 20;
+    m_scrollToBottomBtn->move(x, y);
+}
+
+bool ChatWidget::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_scrollArea->viewport() && event->type() == QEvent::Resize) {
+        if (m_scrollToBottomBtn->isVisible())
+            repositionScrollToBottomBtn();
+    }
+    return QWidget::eventFilter(obj, event);
 }
 
 void ChatWidget::saveTopicHistory()
