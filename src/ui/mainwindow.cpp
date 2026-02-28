@@ -1173,8 +1173,16 @@ void MainWindow::loadMessagesAsync(int connectionId)
                     history.erase(it, history.end());
                 }
                 m_chatWidget->loadMessages(history);
+                // Populate monitor table efficiently: suspend visual updates
+                // during bulk insertion to avoid per-row repaints.
+                m_monitorTable->setSortingEnabled(false);
+                m_monitorTable->setUpdatesEnabled(false);
                 for (const MessageRecord &msg : history)
                     addMessageToMonitor(msg);
+                m_monitorTable->setUpdatesEnabled(true);
+                m_monitorTable->setSortingEnabled(true);
+                if (m_monitorTable->rowCount() > 0)
+                    m_monitorTable->scrollToBottom();
             });
 
     QFuture<QList<MessageRecord>> future = QtConcurrent::run(

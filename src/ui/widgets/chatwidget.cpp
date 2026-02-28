@@ -16,6 +16,7 @@ ChatWidget::ChatWidget(QWidget *parent)
     , m_client(nullptr)
     , m_connectionId(-1)
     , m_pendingScrollCount(0)
+    , m_loadGeneration(0)
 {
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -141,6 +142,10 @@ void ChatWidget::addMessage(const MessageRecord &msg)
 
 void ChatWidget::clearMessages()
 {
+    // Cancel any pending batch load by advancing the generation counter
+    ++m_loadGeneration;
+    m_loadQueue.clear();
+
     // Remove all bubble items (all except the trailing stretch)
     while (m_messagesLayout->count() > 1) {
         QLayoutItem *item = m_messagesLayout->takeAt(0);
@@ -157,14 +162,35 @@ void ChatWidget::loadMessages(const QList<MessageRecord> &messages)
         return;
     // All records in a batch share the same connection ID; set it once.
     m_connectionId = messages.first().connectionId;
-    // Batch-insert all bubbles with updates suspended to avoid per-item repaints
+    m_loadQueue = messages;
+    int gen = m_loadGeneration; // captured so stale timers self-cancel
+    QTimer::singleShot(0, this, [this, gen]() { processNextBatch(gen); });
+}
+
+// Insert up to kLoadBatchSize bubbles, then yield to the event loop.
+// The generation parameter ensures that stale callbacks from a previous
+// loadMessages() call (which may still be queued) do nothing.
+void ChatWidget::processNextBatch(int generation)
+{
+    if (generation != m_loadGeneration || m_loadQueue.isEmpty())
+        return;
+
+    int count = qMin(kLoadBatchSize, m_loadQueue.size());
     m_messagesContainer->setUpdatesEnabled(false);
-    for (const MessageRecord &msg : messages) {
-        MessageBubbleItem *bubble = new MessageBubbleItem(msg, m_messagesContainer);
+    for (int i = 0; i < count; ++i) {
+        MessageBubbleItem *bubble = new MessageBubbleItem(m_loadQueue.at(i), m_messagesContainer);
         m_messagesLayout->insertWidget(m_messagesLayout->count() - 1, bubble);
     }
+    // Remove processed items in a single erase operation (avoids per-item shifting)
+    m_loadQueue.erase(m_loadQueue.begin(), m_loadQueue.begin() + count);
     m_messagesContainer->setUpdatesEnabled(true);
-    QTimer::singleShot(50, this, &ChatWidget::scrollToBottom);
+
+    if (!m_loadQueue.isEmpty()) {
+        // More items remain: yield to the event loop, then continue
+        QTimer::singleShot(0, this, [this, generation]() { processNextBatch(generation); });
+    } else {
+        QTimer::singleShot(50, this, &ChatWidget::scrollToBottom);
+    }
 }
 
 void ChatWidget::onSendClicked()
