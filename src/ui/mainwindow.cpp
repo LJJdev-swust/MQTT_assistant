@@ -1179,12 +1179,19 @@ void MainWindow::loadMessagesAsync(int connectionId)
                 m_chatWidget->loadMessages(history);
                 // Populate monitor table efficiently: suspend visual updates
                 // during bulk insertion to avoid per-row repaints.
-                m_monitorTable->setSortingEnabled(false);
+                // NOTE: Do NOT call setSortingEnabled(true) here. Enabling
+                // sorting causes QTableWidget to re-sort the table whenever
+                // setItem() is called for the sort-indicator column (col 0,
+                // timestamp). That moves the newly-inserted row to a different
+                // index before the remaining setItem() calls complete, so
+                // direction / topic / payload end up on the wrong row and those
+                // cells appear empty.  The monitor is a chronological log and
+                // does not need user-sortable columns.
                 m_monitorTable->setUpdatesEnabled(false);
+                m_monitorTable->setRowCount(0);
                 for (const MessageRecord &msg : history)
                     addMessageToMonitor(msg);
                 m_monitorTable->setUpdatesEnabled(true);
-                m_monitorTable->setSortingEnabled(true);
                 if (m_monitorTable->rowCount() > 0)
                     m_monitorTable->scrollToBottom();
             });
