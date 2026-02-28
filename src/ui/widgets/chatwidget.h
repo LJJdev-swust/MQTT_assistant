@@ -21,6 +21,7 @@ public:
     explicit ChatWidget(QWidget *parent = nullptr);
 
     void setClient(MqttClient *client);
+    void setConnectionId(int id) { m_connectionId = id; }
     void addMessage(const MessageRecord &msg);
     void clearMessages();
     void loadMessages(const QList<MessageRecord> &messages);
