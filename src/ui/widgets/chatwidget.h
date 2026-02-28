@@ -50,6 +50,7 @@ private slots:
 private:
     void updateScrollToBottomBtn();
     void repositionScrollToBottomBtn();
+    void processNextBatch(int generation);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -70,7 +71,12 @@ private:
     int           m_connectionId; // for DB clear
     int           m_pendingScrollCount; // new messages received while scrolled up
 
+    // Batch message loading (avoids blocking the UI thread)
+    QList<MessageRecord> m_loadQueue;
+    int           m_loadGeneration;     // incremented each time loadMessages() is called
+
     static const int kMaxTopicHistory = 10;
+    static const int kLoadBatchSize   = 20;
 };
 
 #endif // CHATWIDGET_H

@@ -464,6 +464,24 @@ QSplitter::handle:horizontal:hover {
     background-color: #ea5413;
 }
 
+/* ---------- Scroll to bottom floating button ---------- */
+QPushButton#scrollToBottomBtn {
+    background-color: rgba(30, 30, 46, 0.82);
+    color: #ffffff;
+    border: none;
+    border-radius: 14px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    min-height: 28px;
+}
+QPushButton#scrollToBottomBtn:hover {
+    background-color: rgba(234, 84, 19, 0.90);
+}
+QPushButton#scrollToBottomBtn:pressed {
+    background-color: rgba(196, 68, 16, 0.95);
+}
+
 /* ---------- 清除按钮 (用于消息标签页右上角) ---------- */
 QPushButton#btnClearChat {
     background-color: #ea5413;
