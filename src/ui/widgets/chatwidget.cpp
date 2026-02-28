@@ -52,6 +52,7 @@ ChatWidget::ChatWidget(QWidget *parent)
     m_scrollToBottomBtn->setCursor(Qt::PointingHandCursor);
     m_scrollToBottomBtn->adjustSize();
     m_scrollToBottomBtn->hide();
+    m_scrollToBottomBtn->setFocusPolicy(Qt::NoFocus);
 
     // Install event filter on viewport to reposition button on resize
     m_scrollArea->viewport()->installEventFilter(this);

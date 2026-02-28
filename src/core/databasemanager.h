@@ -3,10 +3,12 @@
 
 #include <QObject>
 #include <QSqlDatabase>
+#include <QMutexLocker>
 #include <QSqlError>
 #include <QList>
 #include <QFile>
 #include "models.h"
+#include "logger.h"
 
 class DatabaseManager : public QObject
 {
@@ -54,9 +56,20 @@ public:
     QList<MessageRecord> loadMessages(int connectionId, int limit = 100);
     bool deleteMessages(int connectionId);
 
+    // ─── Schema versioning & migrations ─────────────────────────
+    /** 当前数据库 schema 版本（0=旧版/未初始化）*/
+    int  schemaVersion() const;
+    /** 最新版本号——新增迁移时请同步递增此值 */
+    static int latestSchemaVersion() { return kLatestSchemaVersion; }
+    /** 自动应用所有待执行的迁移，返回是否全部成功 */
+    bool applyMigrations();
+
 private:
+    static const int kLatestSchemaVersion = 1;
+
     QSqlDatabase m_db;
     bool createTables();
+    bool setSchemaVersion(int version);
 };
 
 #endif // DATABASEMANAGER_H

@@ -70,6 +70,12 @@ struct SubscriptionConfig {
         : id(-1), connectionId(-1), qos(0) {}
 };
 
+enum MessageDataType {
+    Text = 0,
+    Hex = 1,
+    Json = 2
+};
+
 struct MessageRecord {
     int id;
     int connectionId;
@@ -78,6 +84,7 @@ struct MessageRecord {
     bool outgoing;
     bool retained;
     QDateTime timestamp;
+    MessageDataType dataType;
 
     MessageRecord()
         : id(-1), connectionId(-1), outgoing(false), retained(false) {}

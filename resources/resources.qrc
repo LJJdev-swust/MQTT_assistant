@@ -3,5 +3,7 @@
 <qresource prefix="/">
     <file>styles/main.qss</file>
     <file>icons/check.svg</file>
+    <file>migrations/migration_001.sql</file>
+    <file>migrations/migration_002.sql</file>
 </qresource>
 </RCC>

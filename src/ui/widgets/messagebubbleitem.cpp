@@ -10,27 +10,46 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 
-// Returns a display-friendly representation of a raw payload string.
-static QString formatPayload(const QString &payload)
+// ─────────────────────────────────────────────────────
+//  性能优化常量
+// ─────────────────────────────────────────────────────
+// JSON 超过此长度时不进行格式化，直接显示原文以避免 UI 卡顿
+static const int kMaxJsonFormatLen = 4096;
+// 气泡中最多显示的字符数（超出部分截断，防止大量长消息同时渲染）
+static const int kMaxDisplayLen    = 2000;
+
+// 根据 dataType 和 payload 返回展示文本
+// 使用已知 dataType 可跳过重复的 JSON 解析
+static QString formatPayload(const QString &payload, MessageDataType dataType)
 {
-    // Try JSON
-    QJsonParseError err;
-    QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8(), &err);
-    if (err.error == QJsonParseError::NoError && !doc.isNull())
-        return doc.toJson(QJsonDocument::Indented).trimmed();
+    if (dataType == MessageDataType::Hex)
+        return payload; // HEX 字符串直接显示
+
+    if (dataType == MessageDataType::Json
+        || (dataType == MessageDataType::Text && !payload.startsWith("HEX: "))) {
+        // 仅对短 JSON 进行格式化
+        if (payload.size() <= kMaxJsonFormatLen) {
+            QJsonParseError err;
+            QJsonDocument doc = QJsonDocument::fromJson(payload.toUtf8(), &err);
+            if (err.error == QJsonParseError::NoError && !doc.isNull())
+                return doc.toJson(QJsonDocument::Indented).trimmed();
+        }
+    }
     return payload;
 }
 
-// Returns a short type tag for the payload.
-static QString payloadTypeTag(const QString &payload)
+// 根据 dataType 返回类型标签（不再重复解析 JSON）
+static QString payloadTypeTag(const QString &payload, MessageDataType dataType)
 {
-    if (payload.startsWith("HEX: "))
-        return "[HEX]";
-    QJsonParseError err;
-    QJsonDocument::fromJson(payload.toUtf8(), &err);
-    if (err.error == QJsonParseError::NoError)
-        return "[JSON]";
-    return "[TEXT]";
+    switch (dataType) {
+    case MessageDataType::Hex:  return "[HEX]";
+    case MessageDataType::Json: return "[JSON]";
+    default:
+        // 兼容旧数据：dataType==Text 但 payload 以 "HEX: " 开头
+        if (payload.startsWith("HEX: "))
+            return "[HEX]";
+        return "[TEXT]";
+    }
 }
 
 MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
@@ -65,9 +84,17 @@ MessageBubbleItem::MessageBubbleItem(const MessageRecord &msg, QWidget *parent)
                                   : "color: #1e1e2e; background: transparent;");
     topicLabel->setWordWrap(true);
 
-    // Format detection
-    QString displayPayload = formatPayload(msg.payload);
-    QString typeTag = payloadTypeTag(msg.payload);
+    // Format detection — 使用 msg.dataType 避免重复解析
+    QString displayPayload = formatPayload(msg.payload, msg.dataType);
+    QString typeTag        = payloadTypeTag(msg.payload, msg.dataType);
+
+    // 截断过长的显示内容（原始数据保留在 m_msg.payload 中，右键可复制完整内容）
+    bool truncated = false;
+    if (displayPayload.size() > kMaxDisplayLen) {
+        displayPayload = displayPayload.left(kMaxDisplayLen) + "\n... [内容已截断，右键→复制内容 可获取完整数据]";
+        truncated = true;
+    }
+    Q_UNUSED(truncated)
 
     // Type tag label
     QString retainedTag = msg.retained ? " [留存]" : "";

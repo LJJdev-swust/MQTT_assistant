@@ -6,6 +6,7 @@ CONFIG += c++17
 
 SOURCES += \
     main.cpp \
+    src/core/logger.cpp \
     src/core/mqttclient.cpp \
     src/core/databasemanager.cpp \
     src/core/scriptengine.cpp \
@@ -22,6 +23,7 @@ SOURCES += \
 
 HEADERS += \
     src/core/models.h \
+    src/core/logger.h \
     src/core/mqttclient.h \
     src/core/databasemanager.h \
     src/core/scriptengine.h \

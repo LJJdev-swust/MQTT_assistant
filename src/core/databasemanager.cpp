@@ -6,7 +6,6 @@
 #include <QFileInfo>
 #include <QDebug>
 #include <QVariant>
-
 DatabaseManager::DatabaseManager(QObject *parent)
     : QObject(parent)
 {
@@ -44,11 +43,17 @@ bool DatabaseManager::open(const QString &dbPath)
 
     if (!m_db.open()) {
         qWarning() << "Failed to open database:" << m_db.lastError().text();
+        Logger::error("DB", "数据库打开失败: " + m_db.lastError().text());
         return false;
     }
 
+    Logger::info("DB", "数据库打开成功，路径：" + path);
     qDebug() << "数据库成功打开，路径：" << path;
-    return createTables();
+
+    if (!createTables())
+        return false;
+
+    return applyMigrations();
 }
 
 void DatabaseManager::close()
@@ -130,13 +135,94 @@ bool DatabaseManager::createTables()
         "topic TEXT NOT NULL,"
         "payload TEXT,"
         "outgoing INTEGER NOT NULL DEFAULT 0,"
-        "timestamp TEXT NOT NULL"
+        "timestamp TEXT NOT NULL,"
+        "data_type INTEGER NOT NULL DEFAULT 0"
         ")"
         );
     if (!ok) { qWarning() << q.lastError().text(); return false; }
 
     return true;
 }
+
+// ─── Schema versioning & migrations ──────────────────────────────────────────
+
+int DatabaseManager::schemaVersion() const
+{
+    QSqlQuery q(m_db);
+    if (q.exec("PRAGMA user_version") && q.next())
+        return q.value(0).toInt();
+    return 0;
+}
+
+bool DatabaseManager::setSchemaVersion(int version)
+{
+    QSqlQuery q(m_db);
+    // PRAGMA user_version 不支持绑定参数，需直接拼 SQL
+    return q.exec(QString("PRAGMA user_version = %1").arg(version));
+}
+
+bool DatabaseManager::applyMigrations()
+{
+    int currentVersion = schemaVersion();
+    Logger::info("DB", QString("当前数据库版本: %1，最新版本: %2")
+                           .arg(currentVersion).arg(kLatestSchemaVersion));
+
+    if (currentVersion >= kLatestSchemaVersion) {
+        Logger::debug("DB", "数据库已是最新版本，无需迁移");
+        return true;
+    }
+
+    // ── Migration v0 → v1 ────────────────────────────────────────────────────
+    // 修复：旧版 messages 表缺少 data_type 字段，导致切换连接时聊天记录丢失。
+    if (currentVersion < 1) {
+        Logger::info("DB", "执行迁移 v0 → v1：检查并补充 messages.data_type 字段");
+
+        // 检查 data_type 列是否已存在（SQLite 不支持 ADD COLUMN IF NOT EXISTS）
+        bool colExists = false;
+        QSqlQuery pragma(m_db);
+        if (pragma.exec("PRAGMA table_info(messages)")) {
+            while (pragma.next()) {
+                if (pragma.value(1).toString() == "data_type") {
+                    colExists = true;
+                    break;
+                }
+            }
+        }
+
+        if (!colExists) {
+            QSqlQuery alter(m_db);
+            if (!alter.exec(
+                    "ALTER TABLE messages ADD COLUMN data_type INTEGER NOT NULL DEFAULT 0")) {
+                Logger::error("DB", "迁移失败：无法添加 data_type 列: " +
+                                        alter.lastError().text());
+                return false;
+            }
+            Logger::info("DB", "迁移 v0→v1 成功：已添加 messages.data_type 列");
+        } else {
+            Logger::debug("DB", "迁移 v0→v1：data_type 列已存在，跳过 ALTER TABLE");
+        }
+
+        if (!setSchemaVersion(1)) {
+            Logger::error("DB", "无法更新 PRAGMA user_version");
+            return false;
+        }
+        currentVersion = 1;
+    }
+
+    // ── 在此处追加未来的迁移块 ─────────────────────────────────────────────
+    // if (currentVersion < 2) {
+    //     Logger::info("DB", "执行迁移 v1 → v2：…");
+    //     // ... SQL ...
+    //     setSchemaVersion(2);
+    //     currentVersion = 2;
+    // }
+    // ──────────────────────────────────────────────────────────────────────────
+
+    Logger::info("DB", QString("数据库迁移完成，版本已提升至 %1").arg(currentVersion));
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ---- Connections ----
 
@@ -413,13 +499,14 @@ bool DatabaseManager::deleteSubscription(int id)
 int DatabaseManager::saveMessage(const MessageRecord &msg)
 {
     QSqlQuery q(m_db);
-    q.prepare("INSERT INTO messages (connection_id,topic,payload,outgoing,timestamp) "
-              "VALUES (:connid,:topic,:payload,:out,:ts)");
+    q.prepare("INSERT INTO messages (connection_id,topic,payload,outgoing,timestamp,data_type) "
+              "VALUES (:connid,:topic,:payload,:out,:ts,:data_type)");
     q.bindValue(":connid",  msg.connectionId);
     q.bindValue(":topic",   msg.topic);
     q.bindValue(":payload", msg.payload);
     q.bindValue(":out",     msg.outgoing ? 1 : 0);
     q.bindValue(":ts",      msg.timestamp.toString(Qt::ISODate));
+    q.bindValue(":data_type", msg.dataType);  // 新增字段
     if (!q.exec()) { qWarning() << q.lastError().text(); return -1; }
     return q.lastInsertId().toInt();
 }

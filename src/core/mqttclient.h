@@ -12,10 +12,9 @@
 #include <QTextStream>
 #include <QDateTime>
 #include <QThread>
-#include <QAtomicInt>
 #include <QTimer>
-#include <QOverload>
 #include "models.h"
+#include "logger.h"
 
 class MqttClient : public QObject
 {
@@ -43,16 +42,15 @@ signals:
 private slots:
     void onConnected();
     void onDisconnected();
+    void onMessageReceived(const QByteArray &payload, const QMqttTopicName &topic);
     void onMessageReceived(const QMqttMessage &message);
     void onErrorChanged(QMqttClient::ClientError error);
 
 private:
     QMqttClient  *m_client;
     MqttConnectionConfig m_config;
-    bool m_connected = false;
+    bool m_connected = false; // true = connected, false = not connected
     QString mqttErrorString(QMqttClient::ClientError error) const;
-    void logToFile(const QString &message);
-
 };
 
 #endif // MQTTCLIENT_H

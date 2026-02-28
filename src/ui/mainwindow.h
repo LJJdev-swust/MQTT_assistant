@@ -100,8 +100,6 @@ private:
     QMap<int, MqttClient*>          m_clients;     // connectionId -> client
     QMap<int, QThread*>             m_clientThreads; // connectionId -> thread
     QMap<int, int>                  m_unreadCounts;  // connectionId -> unread count
-    // Tracks the time at which the user cleared the chat display without deleting the DB.
-    // loadMessagesAsync uses this to filter out messages that were shown before the clear.
     QMap<int, QDateTime>            m_chatClearedAt; // connectionId -> clear time
     ScriptEngine                    m_scriptEngine;
 

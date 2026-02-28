@@ -108,7 +108,7 @@ QLineEdit, QSpinBox, QComboBox, QDateTimeEdit {
     border-radius: 4px;
     padding: 4px 8px;
     min-height: 26px;
-    min-width: 50px;
+    min-width: 56px;
     selection-background-color: #ea5413;
     selection-color: #ffffff;
 }
@@ -448,16 +448,14 @@ QSplitter::handle {
     background-color: #d0d0d0;
 }
 QSplitter::handle:vertical {
-    height: 5px;
-    background-color: #d0d0d0;
-    border-top: 1px solid #c0c0c0;
-    border-bottom: 1px solid #c0c0c0;
+    height: 2px;
+    background-color: transparent;
 }
 QSplitter::handle:vertical:hover {
     background-color: #ea5413;
 }
 QSplitter::handle:horizontal {
-    width: 5px;
+    width: 1px;
     background-color: #d0d0d0;
 }
 QSplitter::handle:horizontal:hover {

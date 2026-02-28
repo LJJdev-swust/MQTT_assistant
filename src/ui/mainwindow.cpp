@@ -3,6 +3,7 @@
 #include "dialogs/commanddialog.h"
 #include "dialogs/scriptdialog.h"
 #include "widgets/collapsiblesection.h"
+#include "core/logger.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -23,6 +24,8 @@
 #include <QFileDialog>
 #include <QSettings>
 #include <QCoreApplication>
+#include <QApplication>
+#include <QClipboard>
 #include <QPixmap>
 #include <QDialog>
 #include <QTextEdit>
@@ -32,6 +35,8 @@
 #include <QSqlQuery>
 #include <QUuid>
 #include <algorithm>
+#include <QJsonDocument>
+#include <QJsonParseError>
 
 // ──────────────────────────────────────────────
 //  Construction
@@ -75,16 +80,20 @@ MainWindow::MainWindow(QWidget *parent)
 
 bool MainWindow::initializeDatabase()
 {
+    Logger::info("DB", "初始化数据库...");
+
     // 1. 首先检查是否有上次保存的路径
     QSettings settings("MQTTAssistant", "MQTT_assistant");
     QString lastPath = settings.value("databasePath").toString();
 
     // 2. 如果上次路径存在且文件存在，直接使用
     if (!lastPath.isEmpty() && QFile::exists(lastPath)) {
+        Logger::info("DB", "使用上次的数据库路径：" + lastPath);
         if (m_db.open(lastPath)) {
             qDebug() << "使用上次的数据库路径：" << lastPath;
             return true;
         } else {
+            Logger::error("DB", "上次路径无法打开: " + m_db.lastError());
             // 上次路径存在但无法打开（可能已损坏）
             QMessageBox::warning(this, "警告",
                                  "上次使用的数据库文件存在但无法打开，可能已损坏。\n"
@@ -385,7 +394,7 @@ void MainWindow::setupContentArea(QWidget *content)
             this, &MainWindow::onSubscribeRequested);
     connect(m_chatWidget, &ChatWidget::clearHistoryRequested,
             this, &MainWindow::onClearHistoryRequested);
-    // Req 2: record the time the user cleared the display (without deleting DB)
+
     connect(m_chatWidget, &ChatWidget::displayClearedRequested,
             this, [this](int connectionId) {
                 if (connectionId >= 0)
@@ -403,12 +412,25 @@ void MainWindow::setupContentArea(QWidget *content)
     m_monitorTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     m_monitorTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     m_monitorTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Interactive);
+    m_monitorTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+
     m_monitorTable->setColumnWidth(0, 150);
     m_monitorTable->setColumnWidth(1, 75);
     m_monitorTable->setColumnWidth(2, 200);
-    m_monitorTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    // 禁用文本换行
+    m_monitorTable->setWordWrap(false);
+
+    // 设置固定行高
+    m_monitorTable->verticalHeader()->setDefaultSectionSize(25);
+    m_monitorTable->verticalHeader()->setVisible(false);  // 隐藏行号
+
+    // 设置选择模式
     m_monitorTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_monitorTable->setAlternatingRowColors(false);
+    m_monitorTable->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    // 设置交替行颜色
+    m_monitorTable->setAlternatingRowColors(true);
     m_monitorTable->verticalHeader()->setVisible(false);
     monitorLayout->addWidget(m_monitorTable);
 
@@ -664,9 +686,6 @@ void MainWindow::onConnectRequested(int connectionId)
 
         // Clean up client when thread finishes
         connect(thread, &QThread::finished, client, &QObject::deleteLater);
-        // Initialize QMqttClient inside the worker thread so all its internal
-        // objects (QMqttConnection, sockets, timers) are created there and
-        // avoid the "Cannot create children for a parent in a different thread" warning.
         connect(thread, &QThread::started, client, &MqttClient::init);
         thread->start();
 
@@ -733,12 +752,18 @@ void MainWindow::onConnectRequested(int connectionId)
     disconnect(&m_scriptEngine, &ScriptEngine::messagePublished, this, nullptr);
 
     // 再建立新的连接
+    // 注意：使用 m_activeConnectionId 运行时求值（而非闭包捕获 connectionId），
+    // 避免在快速切换连接时，旧的 connectionId 被残留在闭包中导致消息丢失或保存到错误连接。
     connect(&m_scriptEngine, &ScriptEngine::messagePublished,
-            this, [this, connectionId](const QString &topic, const QString &payload) {
-                if (m_activeConnectionId == connectionId) {
-                    qDebug() << "脚本消息发布:" << topic << payload;  // 添加调试输出
-                    saveAndDisplayMessage(topic, payload, true, connectionId);
+            this, [this](const QString &topic, const QString &payload) {
+                int connId = m_activeConnectionId;
+                if (connId < 0) {
+                    Logger::warning("Script", "脚本触发发布，但无活动连接，消息已丢弃");
+                    return;
                 }
+                Logger::debug("Script", QString("脚本触发发布 -> 连接[%1] topic=%2 payload=%3")
+                                  .arg(connId).arg(topic, payload));
+                saveAndDisplayMessage(topic, payload, true, connId);
             });
 
     QList<ScriptConfig> connScripts;
@@ -755,14 +780,13 @@ void MainWindow::onConnectRequested(int connectionId)
     m_unreadCounts[connectionId] = 0;
     m_connectionPanel->clearUnreadCount(connectionId);
 
-    // Req 2: when the user explicitly (re)connects, reset any display-clear tracking
     m_chatClearedAt.remove(connectionId);
 
     // Refresh per-connection panels
     refreshCommandPanel(connectionId);
     refreshScriptList(connectionId);
 
-    // Load message history asynchronously to keep the UI responsive
+    // Load message history
     loadMessagesAsync(connectionId);
 }
 
@@ -820,7 +844,7 @@ void MainWindow::onConnectionSelectionChanged(int connectionId)
         QList<SubscriptionConfig> subs = m_db.loadSubscriptions(connectionId);
         m_subscriptionPanel->loadSubscriptions(subs);
 
-        // Load message history asynchronously to keep the UI responsive
+        // Load message history
         loadMessagesAsync(connectionId);
     }
 }
@@ -1061,31 +1085,134 @@ void MainWindow::saveAndDisplayMessage(const QString &topic, const QString &payl
     msg.retained     = retained;
     msg.timestamp    = QDateTime::currentDateTime();
 
-    // Do not persist retained messages to avoid duplicate history on reconnect
+    // 检测数据类型
+    if (payload.startsWith("HEX: ")) {
+        msg.dataType = Hex;
+    } else {
+        // 尝试识别 JSON（用于后续显示优化）
+        QJsonParseError err;
+        QJsonDocument::fromJson(payload.toUtf8(), &err);
+        msg.dataType = (err.error == QJsonParseError::NoError) ? Json : Text;
+    }
+
+    // 日志记录关键操作
+    Logger::debug("Chat", QString("[%1] %2 topic=%3 size=%4B dataType=%5")
+                              .arg(connectionId)
+                              .arg(outgoing ? "OUT" : "IN ")
+                              .arg(topic)
+                              .arg(payload.size())
+                              .arg(msg.dataType));
+
+    // 保存到数据库（retained 消息不保存）
     if (!retained) {
         int id = m_db.saveMessage(msg);
         msg.id = id;
     }
 
+    // 显示在界面上
     m_chatWidget->addMessage(msg);
     addMessageToMonitor(msg);
 }
 
 void MainWindow::addMessageToMonitor(const MessageRecord &msg)
 {
+    // 暂时禁用排序
+    bool sortingEnabled = m_monitorTable->isSortingEnabled();
+    m_monitorTable->setSortingEnabled(false);
+
     int row = m_monitorTable->rowCount();
     m_monitorTable->insertRow(row);
 
-    m_monitorTable->setItem(row, 0, new QTableWidgetItem(
-        msg.timestamp.toString("yyyy-MM-dd hh:mm:ss")));
-    m_monitorTable->setItem(row, 1, new QTableWidgetItem(
-        msg.outgoing ? "↑ 发送" : "↓ 接收"));
-    m_monitorTable->setItem(row, 2, new QTableWidgetItem(msg.topic));
-    m_monitorTable->setItem(row, 3, new QTableWidgetItem(msg.payload));
+    // 时间项
+    QString timeStr = msg.timestamp.isValid()
+                          ? msg.timestamp.toString("yyyy-MM-dd hh:mm:ss")
+                          : QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+
+    QTableWidgetItem *timeItem = new QTableWidgetItem(timeStr);
+    timeItem->setTextAlignment(Qt::AlignCenter);
+    timeItem->setFlags(timeItem->flags() & ~Qt::ItemIsEditable);
+    m_monitorTable->setItem(row, 0, timeItem);
+
+    // 方向项
+    QString dirText = msg.outgoing ? "↑ 发送" : "↓ 接收";
+    QTableWidgetItem *dirItem = new QTableWidgetItem(dirText);
+    dirItem->setTextAlignment(Qt::AlignCenter);
+    dirItem->setFlags(dirItem->flags() & ~Qt::ItemIsEditable);
 
     QColor dirColor = msg.outgoing ? QColor("#ea5413") : QColor("#1e9e50");
-    m_monitorTable->item(row, 1)->setForeground(dirColor);
+    dirItem->setForeground(dirColor);
+    m_monitorTable->setItem(row, 1, dirItem);
 
+    // 主题项
+    QString topicStr = msg.topic.trimmed();
+    if (topicStr.isEmpty()) topicStr = "(空主题)";
+
+    QTableWidgetItem *topicItem = new QTableWidgetItem(topicStr);
+    topicItem->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    topicItem->setFlags(topicItem->flags() & ~Qt::ItemIsEditable);
+    topicItem->setToolTip(topicStr);
+    m_monitorTable->setItem(row, 2, topicItem);
+
+    // 内容项 - 专门处理 HEX 格式
+    QString payloadStr = msg.payload;
+
+    // 处理空内容
+    if (payloadStr.isEmpty()) {
+        payloadStr = "(空消息)";
+    }
+
+    // 如果是 HEX 格式，保持原样，只做必要的清理
+    if (payloadStr.startsWith("HEX: ")) {
+        // 保持 HEX 格式不变，只替换换行符为空格，使其单行显示
+        payloadStr.replace('\n', ' ');
+        payloadStr.replace('\r', ' ');
+
+        // 压缩多个连续空格，但保留 HEX 数据中的单个空格
+        QStringList parts = payloadStr.split(' ', Qt::SkipEmptyParts);
+        if (parts.size() > 0 && parts[0] == "HEX:") {
+            // 重新组合，确保 "HEX:" 后面有空格
+            QString hexData = parts.mid(1).join(' ');
+            payloadStr = "HEX: " + hexData;
+        }
+    } else {
+        // 非 HEX 格式，进行一般清理
+        QString cleanPayload;
+        for (QChar c : payloadStr) {
+            if (c.isPrint() || c == ' ') {
+                cleanPayload.append(c);
+            } else if (c == '\n' || c == '\r' || c == '\t') {
+                cleanPayload.append(' ');
+            }
+        }
+        payloadStr = cleanPayload.simplified();
+    }
+
+    // 如果清理后为空，设置默认值
+    if (payloadStr.isEmpty()) {
+        payloadStr = "(空消息)";
+    }
+
+    // 限制显示长度
+    QString displayPayload = payloadStr;
+    QString fullPayload = payloadStr;
+
+    if (displayPayload.length() > 200) {
+        displayPayload = displayPayload.left(200) + "...";
+    }
+
+    QTableWidgetItem *payloadItem = new QTableWidgetItem(displayPayload);
+    payloadItem->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    payloadItem->setFlags(payloadItem->flags() & ~Qt::ItemIsEditable);
+    payloadItem->setToolTip(fullPayload);
+    m_monitorTable->setItem(row, 3, payloadItem);
+
+    // 设置行高
+    m_monitorTable->setRowHeight(row, 25);
+
+    // 恢复排序设置
+    m_monitorTable->setSortingEnabled(sortingEnabled);
+
+    // 滚动到底部
     m_monitorTable->scrollToBottom();
 }
 
@@ -1137,98 +1264,104 @@ void MainWindow::onClearHistoryRequested(int connectionId)
     showToast("聊天记录已清除");
 }
 
-// ──────────────────────────────────────────────
-//  Async Message Loading (background thread)
-// ──────────────────────────────────────────────
-
 void MainWindow::loadMessagesAsync(int connectionId)
 {
-    // Immediately set the connection ID so that the "clear history" checkbox
-    // works even before messages finish loading.
     m_chatWidget->setConnectionId(connectionId);
     m_chatWidget->clearMessages();
     m_monitorTable->setRowCount(0);
 
-    // Req 2: If the user cleared the display (without deleting the DB) for this
-    // connection, capture the clear timestamp so the async callback can filter
-    // out messages that predated the clear.
     const QDateTime clearTime = m_chatClearedAt.value(connectionId, QDateTime());
-
     const QString dbPath = m_db.databasePath();
 
     auto *watcher = new QFutureWatcher<QList<MessageRecord>>(this);
     connect(watcher, &QFutureWatcher<QList<MessageRecord>>::finished, this,
             [this, connectionId, watcher, clearTime]() {
                 watcher->deleteLater();
-                // Discard result if the user has already switched away
                 if (m_activeConnectionId != connectionId) {
-                    qDebug() << "loadMessagesAsync: stale result for connection"
-                             << connectionId << "discarded (active ="
-                             << m_activeConnectionId << ")";
                     return;
                 }
+
                 QList<MessageRecord> history = watcher->result();
-                // Req 2: filter out messages that predated the display clear
+
                 if (clearTime.isValid()) {
                     auto it = std::remove_if(history.begin(), history.end(),
-                        [clearTime](const MessageRecord &m) {
-                            return m.timestamp < clearTime;
-                        });
+                                             [clearTime](const MessageRecord &m) {
+                                                 return m.timestamp < clearTime;
+                                             });
                     history.erase(it, history.end());
                 }
+
                 m_chatWidget->loadMessages(history);
-                // Populate monitor table efficiently: suspend visual updates
-                // during bulk insertion to avoid per-row repaints.
+
+                // 批量添加监控消息
                 m_monitorTable->setSortingEnabled(false);
                 m_monitorTable->setUpdatesEnabled(false);
-                for (const MessageRecord &msg : history)
+
+                for (const MessageRecord &msg : history) {
                     addMessageToMonitor(msg);
+                }
+
                 m_monitorTable->setUpdatesEnabled(true);
                 m_monitorTable->setSortingEnabled(true);
-                if (m_monitorTable->rowCount() > 0)
+
+                if (m_monitorTable->rowCount() > 0) {
                     m_monitorTable->scrollToBottom();
+                }
             });
 
     QFuture<QList<MessageRecord>> future = QtConcurrent::run(
         [dbPath, connectionId]() -> QList<MessageRecord> {
-            // Open a separate, uniquely-named SQLite connection so this
-            // thread-pool thread does not conflict with the main-thread
-            // DatabaseManager instance (QSqlDatabase connections are
-            // per-thread and cannot be shared). The inline SQL mirrors
-            // DatabaseManager::loadMessages intentionally.
-            // Note: the 'retained' column does not exist in the schema, so
-            // the field stays at its default value of false.
-            const QString connName =
-                QStringLiteral("mqtt_load_") +
-                QUuid::createUuid().toString(QUuid::WithoutBraces);
+            const QString connName = QStringLiteral("mqtt_load_") +
+                                     QUuid::createUuid().toString(QUuid::WithoutBraces);
             QList<MessageRecord> result;
+
             {
                 QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", connName);
                 db.setDatabaseName(dbPath);
+
                 if (db.open()) {
+                    // 修改查询，包含 data_type 字段
                     QSqlQuery q(db);
                     q.prepare(
-                        "SELECT id,connection_id,topic,payload,outgoing,timestamp "
+                        "SELECT id, connection_id, topic, payload, outgoing, timestamp, data_type "
                         "FROM messages WHERE connection_id=:connid "
-                        "ORDER BY id DESC LIMIT 100");
+                        "ORDER BY id DESC LIMIT 100"
+                        );
                     q.bindValue(":connid", connectionId);
+
                     if (q.exec()) {
                         while (q.next()) {
                             MessageRecord m;
                             m.id           = q.value(0).toInt();
                             m.connectionId = q.value(1).toInt();
                             m.topic        = q.value(2).toString();
-                            m.payload      = q.value(3).toString();
+
+                            // 根据 data_type 处理 payload
+                            int dataType = q.value(6).toInt();
+                            QString payload = q.value(3).toString();
+
+                            if (dataType == 1 || payload.startsWith("HEX: ")) {
+                                // HEX 格式，保持原样
+                                m.payload = payload;
+                                m.dataType = Hex;
+                            } else {
+                                // 普通文本
+                                m.payload = payload;
+                                m.dataType = Text;
+                            }
+
                             m.outgoing     = q.value(4).toBool();
                             m.retained     = false;
                             m.timestamp    = QDateTime::fromString(
                                 q.value(5).toString(), Qt::ISODate);
+
                             result.prepend(m);
                         }
                     }
                     db.close();
                 }
             }
+
             QSqlDatabase::removeDatabase(connName);
             return result;
         });
@@ -1242,33 +1375,137 @@ void MainWindow::loadMessagesAsync(int connectionId)
 
 void MainWindow::onMonitorRowDoubleClicked(int row, int /*col*/)
 {
-    if (row < 0 || row >= m_monitorTable->rowCount()) return;
+    if (row < 0 || row >= m_monitorTable->rowCount()) {
+        return;
+    }
 
-    QString time    = m_monitorTable->item(row, 0) ? m_monitorTable->item(row, 0)->text() : QString();
-    QString dir     = m_monitorTable->item(row, 1) ? m_monitorTable->item(row, 1)->text() : QString();
-    QString topic   = m_monitorTable->item(row, 2) ? m_monitorTable->item(row, 2)->text() : QString();
-    QString payload = m_monitorTable->item(row, 3) ? m_monitorTable->item(row, 3)->text() : QString();
+    QTableWidgetItem *timeItem = m_monitorTable->item(row, 0);
+    QTableWidgetItem *dirItem = m_monitorTable->item(row, 1);
+    QTableWidgetItem *topicItem = m_monitorTable->item(row, 2);
+    QTableWidgetItem *payloadItem = m_monitorTable->item(row, 3);
+
+    if (!timeItem || !dirItem || !topicItem || !payloadItem) {
+        QMessageBox::warning(this, "错误", "无法获取消息详情");
+        return;
+    }
+
+    QString time    = timeItem->text();
+    QString dir     = dirItem->text();
+    QString topic   = topicItem->text();
+    QString payload = payloadItem->toolTip().isEmpty() ? payloadItem->text() : payloadItem->toolTip();
 
     QDialog dlg(this);
-    dlg.setWindowTitle("消息详情");
-    dlg.setMinimumSize(480, 320);
+    dlg.setWindowTitle("消息详情 - " + topic);
+    dlg.setMinimumSize(600, 400);
+    dlg.resize(800, 600);
+
     QVBoxLayout *layout = new QVBoxLayout(&dlg);
 
-    QLabel *infoLabel = new QLabel(
-        QString("<b>时间:</b> %1 &nbsp;&nbsp; <b>方向:</b> %2 &nbsp;&nbsp; <b>主题:</b> %3")
-            .arg(time.toHtmlEscaped(), dir.toHtmlEscaped(), topic.toHtmlEscaped()),
-        &dlg);
+    // 信息显示区域
+    QFrame *infoFrame = new QFrame(&dlg);
+    infoFrame->setFrameStyle(QFrame::StyledPanel | QFrame::Sunken);
+    QVBoxLayout *infoLayout = new QVBoxLayout(infoFrame);
+
+    QLabel *infoLabel = new QLabel(infoFrame);
+    infoLabel->setTextFormat(Qt::RichText);
+    infoLabel->setText(
+        QString("<b>时间:</b> %1<br>"
+                "<b>方向:</b> %2<br>"
+                "<b>主题:</b> %3")
+            .arg(time.toHtmlEscaped(),
+                 dir.toHtmlEscaped(),
+                 topic.toHtmlEscaped()));
     infoLabel->setWordWrap(true);
-    layout->addWidget(infoLabel);
+    infoLayout->addWidget(infoLabel);
+
+    layout->addWidget(infoFrame);
+
+    // 内容显示区域
+    QLabel *contentLabel = new QLabel("消息内容:", &dlg);
+    layout->addWidget(contentLabel);
 
     QTextEdit *contentEdit = new QTextEdit(&dlg);
-    contentEdit->setPlainText(payload);
+
+    // 如果是 HEX 数据，格式化显示
+    if (payload.startsWith("HEX: ")) {
+        // 移除 "HEX: " 前缀
+        QString hexData = payload.mid(5).trimmed();
+
+        // 按空格分割字节
+        QStringList bytes = hexData.split(' ', Qt::SkipEmptyParts);
+
+        // 格式化为每行16字节
+        QStringList lines;
+        lines << "HEX:";
+        for (int i = 0; i < bytes.size(); i += 16) {
+            QString line = "    ";
+            // 添加字节数据
+            QStringList rowBytes = bytes.mid(i, 16);
+            for (int j = 0; j < rowBytes.size(); ++j) {
+                line += rowBytes[j];
+                if (j < rowBytes.size() - 1) {
+                    line += ' ';
+                }
+            }
+            // 添加ASCII表示
+            line += "    |";
+            for (int j = 0; j < 16; ++j) {
+                if (i + j < bytes.size()) {
+                    bool ok;
+                    int byteVal = bytes[i + j].toInt(&ok, 16);
+                    if (ok && byteVal >= 32 && byteVal <= 126) {
+                        line += QChar(byteVal);
+                    } else {
+                        line += '.';
+                    }
+                } else {
+                    line += ' ';
+                }
+            }
+            line += '|';
+            lines << line;
+        }
+
+        contentEdit->setPlainText(lines.join('\n'));
+    } else {
+        contentEdit->setPlainText(payload);
+    }
+
     contentEdit->setReadOnly(true);
+    contentEdit->setFontFamily("Consolas, Monaco, Courier New, monospace");
+
     layout->addWidget(contentEdit);
 
-    QDialogButtonBox *bbox = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
-    bbox->button(QDialogButtonBox::Close)->setText("关闭");
+    // 按钮区域
+    QDialogButtonBox *bbox = new QDialogButtonBox(&dlg);
+
+    bbox->addButton("关闭", QDialogButtonBox::RejectRole);
+    QPushButton *copyBtn = bbox->addButton("复制原始数据", QDialogButtonBox::ActionRole);
+    QPushButton *copyHexBtn = bbox->addButton("复制HEX格式", QDialogButtonBox::ActionRole);
+
     connect(bbox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(copyBtn, &QPushButton::clicked, [&dlg, payload]() {
+        QApplication::clipboard()->setText(payload);
+        dlg.setWindowTitle("消息详情 - 已复制原始数据");
+        QTimer::singleShot(1000, &dlg, [&dlg]() {
+            dlg.setWindowTitle("消息详情");
+        });
+    });
+
+    connect(copyHexBtn, &QPushButton::clicked, [&dlg, payload]() {
+        if (payload.startsWith("HEX: ")) {
+            // 只复制HEX数据部分，不带格式
+            QString hexData = payload.mid(5).trimmed();
+            QApplication::clipboard()->setText(hexData);
+        } else {
+            QApplication::clipboard()->setText(payload);
+        }
+        dlg.setWindowTitle("消息详情 - 已复制HEX数据");
+        QTimer::singleShot(1000, &dlg, [&dlg]() {
+            dlg.setWindowTitle("消息详情");
+        });
+    });
+
     layout->addWidget(bbox);
 
     dlg.exec();

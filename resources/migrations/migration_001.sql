@@ -1,0 +1,11 @@
+-- Migration 001: 初始版本迁移
+-- 从无版本跟踪的旧数据库迁移到 v1
+--
+-- 修复：旧数据库的 messages 表缺少 data_type 字段，
+-- 导致切换连接时聊天记录查询失败、历史记录消失。
+--
+-- SQLite 不支持 "ALTER TABLE ADD COLUMN IF NOT EXISTS"，
+-- 因此通过代码层面检查列是否存在来决定是否执行。
+-- （此处留空，由 DatabaseManager::applyMigrations 里的
+--  特殊逻辑处理 data_type 列的追加）
+SELECT 1; -- placeholder: 实际 ALTER 由代码驱动
