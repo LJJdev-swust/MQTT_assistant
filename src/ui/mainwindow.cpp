@@ -31,6 +31,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QUuid>
+#include <algorithm>
 
 // ──────────────────────────────────────────────
 //  Construction
@@ -384,6 +385,12 @@ void MainWindow::setupContentArea(QWidget *content)
             this, &MainWindow::onSubscribeRequested);
     connect(m_chatWidget, &ChatWidget::clearHistoryRequested,
             this, &MainWindow::onClearHistoryRequested);
+    // Req 2: record the time the user cleared the display (without deleting DB)
+    connect(m_chatWidget, &ChatWidget::displayClearedRequested,
+            this, [this](int connectionId) {
+                if (connectionId >= 0)
+                    m_chatClearedAt[connectionId] = QDateTime::currentDateTime();
+            });
 
     // Monitor tab
     QWidget *monitorWidget = new QWidget(content);
@@ -418,6 +425,12 @@ void MainWindow::setupContentArea(QWidget *content)
     connect(clearBtn, &QPushButton::clicked, m_chatWidget, &ChatWidget::onClearClicked);
 
     layout->addWidget(m_tabWidget);
+
+    // Req 1: when switching back to the chat tab, scroll to the latest message
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, [this](int /*index*/) {
+        if (m_tabWidget->currentWidget() == m_chatWidget)
+            QTimer::singleShot(0, m_chatWidget, &ChatWidget::scrollToBottom);
+    });
 }
 
 void MainWindow::setupMenuBar()
@@ -737,6 +750,9 @@ void MainWindow::onConnectRequested(int connectionId)
 
     m_unreadCounts[connectionId] = 0;
     m_connectionPanel->clearUnreadCount(connectionId);
+
+    // Req 2: when the user explicitly (re)connects, reset any display-clear tracking
+    m_chatClearedAt.remove(connectionId);
 
     // Refresh per-connection panels
     refreshCommandPanel(connectionId);
@@ -1107,8 +1123,11 @@ QString MainWindow::loadDatabasePathFromSettings()
 
 void MainWindow::onClearHistoryRequested(int connectionId)
 {
-    if (connectionId >= 0)
+    if (connectionId >= 0) {
         m_db.deleteMessages(connectionId);
+        // DB cleared — no need to filter future loads for this connection
+        m_chatClearedAt.remove(connectionId);
+    }
     // Also clear the monitor table so it reflects the cleared state
     m_monitorTable->setRowCount(0);
     showToast("聊天记录已清除");
@@ -1120,17 +1139,22 @@ void MainWindow::onClearHistoryRequested(int connectionId)
 
 void MainWindow::loadMessagesAsync(int connectionId)
 {
-    // Immediately clear display and set the connection ID so that the
-    // "clear history" checkbox works even before messages finish loading.
+    // Immediately set the connection ID so that the "clear history" checkbox
+    // works even before messages finish loading.
     m_chatWidget->setConnectionId(connectionId);
     m_chatWidget->clearMessages();
     m_monitorTable->setRowCount(0);
+
+    // Req 2: If the user cleared the display (without deleting the DB) for this
+    // connection, capture the clear timestamp so the async callback can filter
+    // out messages that predated the clear.
+    const QDateTime clearTime = m_chatClearedAt.value(connectionId, QDateTime());
 
     const QString dbPath = m_db.databasePath();
 
     auto *watcher = new QFutureWatcher<QList<MessageRecord>>(this);
     connect(watcher, &QFutureWatcher<QList<MessageRecord>>::finished, this,
-            [this, connectionId, watcher]() {
+            [this, connectionId, watcher, clearTime]() {
                 watcher->deleteLater();
                 // Discard result if the user has already switched away
                 if (m_activeConnectionId != connectionId) {
@@ -1139,7 +1163,15 @@ void MainWindow::loadMessagesAsync(int connectionId)
                              << m_activeConnectionId << ")";
                     return;
                 }
-                const QList<MessageRecord> history = watcher->result();
+                QList<MessageRecord> history = watcher->result();
+                // Req 2: filter out messages that predated the display clear
+                if (clearTime.isValid()) {
+                    auto it = std::remove_if(history.begin(), history.end(),
+                        [clearTime](const MessageRecord &m) {
+                            return m.timestamp < clearTime;
+                        });
+                    history.erase(it, history.end());
+                }
                 m_chatWidget->loadMessages(history);
                 for (const MessageRecord &msg : history)
                     addMessageToMonitor(msg);
