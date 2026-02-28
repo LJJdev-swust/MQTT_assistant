@@ -1,5 +1,6 @@
 #include "scriptengine.h"
 #include "mqttclient.h"
+#include "logger.h"
 #include <QRegularExpression>
 #include <QDateTime>
 #include <QTimer>
@@ -85,6 +86,7 @@ void ScriptEngine::onMessageReceived(const QString &topic, const QString &payloa
         }
 
         if (matchesCondition(script, topic, payload)) {
+            Logger::debug("Script", QString("脚本[%1]条件匹配 topic=%2").arg(script.name, topic));
             triggerScript(script, topic, payload);
         }
     }
@@ -146,11 +148,8 @@ void ScriptEngine::triggerScript(const ScriptConfig &script,
     int qos     = script.responseQos;
     bool retain = script.responseRetain;
 
-    // 添加调试输出，查看触发次数
-    qDebug() << "脚本触发 - ID:" << script.id
-             << "名称:" << script.name
-             << "响应主题:" << responseTopic
-             << "响应内容:" << responsePayload;
+    Logger::info("Script", QString("脚本触发 id=%1 name=%2 -> topic=%3")
+                                .arg(script.id).arg(script.name, responseTopic));
 
     if (script.delayMs <= 0) {
         QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
@@ -158,20 +157,21 @@ void ScriptEngine::triggerScript(const ScriptConfig &script,
                                   Q_ARG(QString, responsePayload),
                                   Q_ARG(int, qos),
                                   Q_ARG(bool, retain));
-        qDebug() << "立即发布消息";
+        Logger::debug("Script", "立即发布消息");
         emit messagePublished(responseTopic, responsePayload);
     } else {
-        qDebug() << "延迟" << script.delayMs << "ms后发布消息";
-        // 使用一个标志位防止多次触发（如果需要）
-        QTimer::singleShot(script.delayMs, this, [this, responseTopic, responsePayload, qos, retain]() {
+        Logger::debug("Script", QString("延迟 %1ms 后发布消息").arg(script.delayMs));
+        QTimer::singleShot(script.delayMs, this, [this, responseTopic, responsePayload, qos, retain, scriptName = script.name]() {
             if (m_client && m_client->isConnected()) {
                 QMetaObject::invokeMethod(m_client, "publish", Qt::QueuedConnection,
                                           Q_ARG(QString, responseTopic),
                                           Q_ARG(QString, responsePayload),
                                           Q_ARG(int, qos),
                                           Q_ARG(bool, retain));
-                qDebug() << "延迟后发布消息";
+                Logger::debug("Script", QString("脚本[%1]延迟发布完成 topic=%2").arg(scriptName, responseTopic));
                 emit messagePublished(responseTopic, responsePayload);
+            } else {
+                Logger::warning("Script", QString("脚本[%1]延迟后连接已断开，消息已丢弃").arg(scriptName));
             }
         });
     }

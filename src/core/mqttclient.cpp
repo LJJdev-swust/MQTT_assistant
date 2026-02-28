@@ -63,16 +63,15 @@ void MqttClient::init()
 
 MqttClient::~MqttClient()
 {
-    logToFile("========================================");
-    logToFile("========== MqttClient 析构 ==========");
-    logToFile("时间: " + QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz"));
+    Logger::instance().separator("MqttClient 析构");
+    Logger::debug("MQTT", "时间: " + QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz"));
 
-    if (m_client && m_client->state() != QMqttClient::Disconnected)
-        logToFile("正在断开连接...");
+    if (m_client && m_client->state() != QMqttClient::Disconnected) {
+        Logger::debug("MQTT", "正在断开连接...");
         m_client->disconnectFromHost();
+    }
 
-    logToFile("析构完成");
-    logToFile("========================================");
+    Logger::debug("MQTT", "析构完成");
 }
 
 // ─── 二进制数据检测辅助 ──────────────────────────────────────────────────────

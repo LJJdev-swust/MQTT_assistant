@@ -22,6 +22,7 @@
 #include <QInputDialog>
 #include <QResizeEvent>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QSettings>
 #include <QCoreApplication>
 #include <QApplication>
@@ -50,6 +51,9 @@ MainWindow::MainWindow(QWidget *parent)
     , m_toastTimer(nullptr)
 {
     qRegisterMetaType<MqttConnectionConfig>("MqttConnectionConfig");
+
+    Logger::instance().separator("MQTT Assistant 主窗口启动");
+    Logger::info("App", QString("版本构建时间: %1 %2").arg(__DATE__, __TIME__));
 
     setWindowTitle("MQTT 助手");
     setMinimumSize(960, 640);
@@ -91,6 +95,9 @@ bool MainWindow::initializeDatabase()
         Logger::info("DB", "使用上次的数据库路径：" + lastPath);
         if (m_db.open(lastPath)) {
             qDebug() << "使用上次的数据库路径：" << lastPath;
+            // 将日志文件放在与数据库相同的目录
+            Logger::instance().setLogDir(QFileInfo(lastPath).absolutePath());
+            Logger::info("DB", "数据库打开成功，日志目录：" + QFileInfo(lastPath).absolutePath());
             return true;
         } else {
             Logger::error("DB", "上次路径无法打开: " + m_db.lastError());
@@ -172,6 +179,10 @@ bool MainWindow::promptForDatabasePath()
         if (m_db.open(selectedPath)) {
             // 保存成功路径到设置
             saveDatabasePathToSettings(selectedPath);
+
+            // 将日志文件放在与数据库相同的目录
+            Logger::instance().setLogDir(QFileInfo(selectedPath).absolutePath());
+            Logger::info("DB", "数据库打开成功：" + selectedPath);
 
             // 使用 QMessageBox 替代 showToast
             QMessageBox::information(this, "成功",
