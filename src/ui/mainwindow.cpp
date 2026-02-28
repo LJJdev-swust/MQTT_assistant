@@ -664,6 +664,10 @@ void MainWindow::onConnectRequested(int connectionId)
 
         // Clean up client when thread finishes
         connect(thread, &QThread::finished, client, &QObject::deleteLater);
+        // Initialize QMqttClient inside the worker thread so all its internal
+        // objects (QMqttConnection, sockets, timers) are created there and
+        // avoid the "Cannot create children for a parent in a different thread" warning.
+        connect(thread, &QThread::started, client, &MqttClient::init);
         thread->start();
 
         m_clients[connectionId]      = client;

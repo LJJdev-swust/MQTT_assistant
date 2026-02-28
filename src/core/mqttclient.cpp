@@ -8,8 +8,13 @@
 
 MqttClient::MqttClient(QObject *parent)
     : QObject(parent)
-    , m_client(new QMqttClient(this))
+    , m_client(nullptr)
 {
+}
+
+void MqttClient::init()
+{
+    m_client = new QMqttClient(this);
     connect(m_client, &QMqttClient::connected,    this, &MqttClient::onConnected);
     connect(m_client, &QMqttClient::disconnected, this, &MqttClient::onDisconnected);
     connect(m_client, &QMqttClient::messageReceived, this, &MqttClient::onMessageReceived);
@@ -18,7 +23,7 @@ MqttClient::MqttClient(QObject *parent)
 
 MqttClient::~MqttClient()
 {
-    if (m_client->state() != QMqttClient::Disconnected)
+    if (m_client && m_client->state() != QMqttClient::Disconnected)
         m_client->disconnectFromHost();
 }
 
@@ -38,6 +43,10 @@ void MqttClient::logToFile(const QString &message)
 
 void MqttClient::connectToHost(const MqttConnectionConfig &config)
 {
+    if (!m_client) {
+        emit errorOccurred("Client not initialized");
+        return;
+    }
     // 记录开始连接
     logToFile("========== 开始MQTT连接 ==========");
     logToFile("时间: " + QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"));
@@ -231,12 +240,13 @@ void MqttClient::connectToHost(const MqttConnectionConfig &config)
 
 void MqttClient::disconnectFromHost()
 {
+    if (!m_client) return;
     m_client->disconnectFromHost();
 }
 
 void MqttClient::publish(const QString &topic, const QString &payload, int qos, bool retain)
 {
-    if (m_client->state() != QMqttClient::Connected) {
+    if (!m_client || m_client->state() != QMqttClient::Connected) {
         emit errorOccurred("Not connected");
         return;
     }
@@ -246,7 +256,7 @@ void MqttClient::publish(const QString &topic, const QString &payload, int qos, 
 
 void MqttClient::subscribe(const QString &topic, int qos)
 {
-    if (m_client->state() != QMqttClient::Connected) {
+    if (!m_client || m_client->state() != QMqttClient::Connected) {
         emit errorOccurred("Not connected");
         return;
     }
@@ -256,6 +266,7 @@ void MqttClient::subscribe(const QString &topic, int qos)
 
 void MqttClient::unsubscribe(const QString &topic)
 {
+    if (!m_client) return;
     QMqttTopicFilter filter(topic);
     m_client->unsubscribe(filter);
 }
